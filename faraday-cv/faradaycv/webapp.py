@@ -10,6 +10,7 @@ and one background thread runs the analysis while the page polls for status.
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 import threading
@@ -77,7 +78,21 @@ class Session:
         }
 
 
-def create_app(workdir: str | Path | None = None) -> Flask:
+def create_app(
+    workdir: str | Path | None = None,
+    local_mode: bool | None = None,
+) -> Flask:
+    """Build the app.
+
+    ``local_mode`` enables conveniences that are only safe when the server and
+    the browser are the same machine -- above all opening a video by its path
+    on disk.  Served to anyone else, that endpoint would read arbitrary files,
+    so it is refused unless local mode is on.  It defaults to on, and to off
+    when FARADAYCV_LOCAL_MODE is set to 0/false/no.
+    """
+    if local_mode is None:
+        env = os.environ.get("FARADAYCV_LOCAL_MODE", "1").strip().lower()
+        local_mode = env not in {"0", "false", "no", "off"}
     base = Path(workdir) if workdir else Path(tempfile.gettempdir()) / "faraday-cv"
     base.mkdir(parents=True, exist_ok=True)
     here = Path(__file__).resolve().parent.parent
@@ -151,9 +166,21 @@ def create_app(workdir: str | Path | None = None) -> Flask:
             sessions[sid] = session
         return jsonify(session.public())
 
+    @app.get("/api/config")
+    def client_config():
+        """What the page is allowed to offer, decided by the server."""
+        return jsonify({"local_mode": bool(local_mode)})
+
     @app.post("/api/video/path")
     def open_video_path():
         """Analyse a file where it already is -- no copy, no upload wait."""
+        if not local_mode:
+            return jsonify(
+                {
+                    "error": "opening files by path is only available when "
+                    "faraday-cv runs on your own machine; upload the video instead"
+                }
+            ), 403
         data = request.get_json(force=True)
         raw = (data.get("path") or "").strip().strip("'\"")
         if not raw:

@@ -264,3 +264,30 @@ def test_a_quoted_path_pasted_from_finder_still_works(client, dataset):
     """Dragging a file into a terminal or field often brings quotes with it."""
     out = client.post("/api/video/path", json={"path": f"'{dataset.video}'"}).get_json()
     assert "session" in out
+
+
+def test_a_public_server_refuses_to_open_local_paths(tmp_path, dataset):
+    """Served to other machines, the path endpoint would read any file."""
+    app = create_app(workdir=tmp_path / "public", local_mode=False)
+    app.config.update(TESTING=True)
+    public = app.test_client()
+
+    assert public.get("/api/config").get_json()["local_mode"] is False
+    res = public.post("/api/video/path", json={"path": str(dataset.video)})
+    assert res.status_code == 403
+    assert "own machine" in res.get_json()["error"]
+    # uploading still works, so the public deployment is not crippled
+    data = {"file": (io.BytesIO(dataset.video.read_bytes()), "swing.mp4")}
+    ok = public.post("/api/video", data=data, content_type="multipart/form-data")
+    assert ok.status_code == 200
+
+
+def test_local_mode_is_the_default_and_is_advertised(client):
+    assert client.get("/api/config").get_json()["local_mode"] is True
+
+
+def test_the_environment_can_turn_local_mode_off(tmp_path, dataset, monkeypatch):
+    monkeypatch.setenv("FARADAYCV_LOCAL_MODE", "0")
+    app = create_app(workdir=tmp_path / "env")
+    app.config.update(TESTING=True)
+    assert app.test_client().get("/api/config").get_json()["local_mode"] is False

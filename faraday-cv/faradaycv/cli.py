@@ -247,7 +247,7 @@ def cmd_analyze(args) -> int:
 def cmd_serve(args) -> int:
     from .webapp import create_app
 
-    app = create_app(workdir=args.workdir)
+    app = create_app(workdir=args.workdir, local_mode=not args.public)
     print(f"faraday-cv UI on http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=args.debug)
     return 0
@@ -354,6 +354,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--workdir", default=None, help="where uploads and results go")
+    p_serve.add_argument(
+        "--public",
+        action="store_true",
+        help="serving to other machines: disables opening videos by local path",
+    )
     p_serve.add_argument("--debug", action="store_true")
     p_serve.set_defaults(func=cmd_serve)
     return p

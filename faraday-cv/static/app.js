@@ -551,3 +551,12 @@ $("scale-length").addEventListener("change", () => {
 });
 
 buildSliders();
+
+/* The path field only makes sense when the server is this machine. */
+api("/api/config")
+  .then((cfg) => {
+    if (!cfg.local_mode) {
+      $("path-block").hidden = true;
+    }
+  })
+  .catch(() => {});
