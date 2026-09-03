@@ -2,3 +2,5 @@ example-data/
 out/
 *.mp4
 *.avi
+.venv/
+venv/

@@ -28,17 +28,29 @@
 
 ## 설치
 
+가상환경을 만들어 설치하는 것을 권합니다 (macOS 기본 파이썬에서 `pip install`이
+`externally-managed-environment` 오류를 내는 것을 피할 수 있습니다).
+
 ```bash
 cd faraday-cv
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
 ```
+
+- 두 번째 실행부터는 `source .venv/bin/activate` 한 줄이면 됩니다.
+- Windows는 `python3` 대신 `py`, 활성화는 `.venv\Scripts\activate`.
+- macOS·Linux에 `pip` 명령이 없어도 됩니다. 항상 `python3 -m pip` 를 쓰세요.
+- 아래 명령들은 **`faraday-cv` 폴더 안에서** 실행합니다.
+  `No module named faradaycv` 오류는 대부분 다른 폴더에 있다는 뜻입니다.
 
 ## 1분 체험 (장비 없이)
 
 합성 데이터셋(영상 + 전압 로그 + 정답값)을 만들어서 전체 흐름을 그대로 돌려봅니다.
+첫 명령이 `example-data/pendulum.mp4` 와 `voltage.csv` 를 만듭니다.
 
 ```bash
-python3 -m faradaycv.synthetic example-data      # pendulum.mp4, voltage.csv 생성
+python3 -m faradaycv.synthetic example-data
 python3 -m faradaycv analyze example-data/pendulum.mp4 \
     --voltage example-data/voltage.csv \
     --hsv 170,10,120,255,80,255 \
@@ -66,8 +78,11 @@ peak separation : -0.190 s (speed at the emf peak: 0.455 m/s)
 ## 웹 UI (코딩 없이)
 
 ```bash
-python3 -m faradaycv serve       # http://127.0.0.1:8000
+python3 -m faradaycv serve
 ```
+
+터미널에 뜨는 주소(기본 `http://127.0.0.1:8000`)를 브라우저에서 열고, 끌 때는
+터미널에서 `Ctrl+C`. 포트가 이미 쓰이면 `--port 8080` 처럼 바꾸세요.
 
 브라우저에서 순서대로:
 
@@ -85,13 +100,22 @@ python3 -m faradaycv serve       # http://127.0.0.1:8000
 ## 명령줄
 
 ```bash
-python3 -m faradaycv info   swing.mp4                    # fps, 프레임 수
-python3 -m faradaycv frame  swing.mp4 --index 0 --out f.png
-python3 -m faradaycv pick   swing.mp4 --at 320,180       # 클릭 지점 → HSV 범위
-python3 -m faradaycv track  swing.mp4 --hsv 170,10,120,255,80,255 -o track.csv
+python3 -m faradaycv info swing.mp4
+python3 -m faradaycv frame swing.mp4 --index 0 --out f.png
+python3 -m faradaycv pick swing.mp4 --at 320,180
+python3 -m faradaycv track swing.mp4 --hsv 170,10,120,255,80,255 -o track.csv
 python3 -m faradaycv analyze swing.mp4 --voltage log.csv --hsv ... -o out/
-python3 -m faradaycv serve                               # 웹 UI
+python3 -m faradaycv serve
 ```
+
+| 명령      | 하는 일                                    |
+| --------- | ------------------------------------------ |
+| `info`    | fps, 프레임 수, 해상도                     |
+| `frame`   | 한 프레임을 이미지로 저장 (색 좌표 찾기용) |
+| `pick`    | 지정한 픽셀에서 HSV 범위 추정              |
+| `track`   | 프레임별 중심좌표 CSV                      |
+| `analyze` | 전체 분석: 그래프 + 표 + 요약              |
+| `serve`   | 웹 UI                                      |
 
 `analyze` 주요 옵션:
 
@@ -120,9 +144,12 @@ python3 -m faradaycv serve                               # 웹 UI
 - 출력은 `t_ms,voltage_mV` CSV. PC에서 저장:
 
 ```bash
+python3 -m pip install pyserial
 python3 tools/serial_logger.py --list
 python3 tools/serial_logger.py --port /dev/ttyACM0 --out voltage.csv --seconds 20
 ```
+
+`--list` 가 포트 목록을 보여줍니다. macOS는 보통 `/dev/tty.usbmodem…` 입니다.
 
 시리얼 모니터 내용을 그대로 복사해 저장해도 됩니다. 다른 스케치·다른 로거로
 받은 파일도 그대로 넣으면 됩니다 — 실제 실험 로그에서 확인한 것들:
@@ -151,22 +178,30 @@ python3 tools/serial_logger.py --port /dev/ttyACM0 --out voltage.csv --seconds 2
 
 ## 잘 안 될 때
 
-| 증상                                  | 확인할 것                                                                          |
-| ------------------------------------- | ---------------------------------------------------------------------------------- |
-| 검출률이 낮다 (`detected in only …%`) | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                     |
-| 덩어리가 여러 개 잡힌다               | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                          |
-| `LED never crossed the on-threshold`  | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`로 수동 지정              |
-| `LED region is bright in every frame` | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요 |
-| `records do not overlap`              | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                |
-| ℰ/v가 회전점에서 폭발한다             | 정상입니다(v→0). `--v-min`을 올리세요                                              |
-| 속도 곡선이 톱니처럼 떨린다           | `--smooth` 값을 키우세요(프레임 수, 홀수)                                          |
+| 증상                                  | 확인할 것                                                                                       |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 검출률이 낮다 (`detected in only …%`) | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                                  |
+| 덩어리가 여러 개 잡힌다               | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                                       |
+| `LED never crossed the on-threshold`  | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`로 수동 지정                           |
+| `LED region is bright in every frame` | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요              |
+| `records do not overlap`              | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                             |
+| ℰ/v가 회전점에서 폭발한다             | 정상입니다(v→0). `--v-min`을 올리세요                                                           |
+| 속도 곡선이 톱니처럼 떨린다           | `--smooth` 값을 키우세요(프레임 수, 홀수)                                                       |
+| `zsh: command not found: pip`         | macOS에는 `pip` 명령이 없습니다. `python3 -m pip` 를 쓰세요                                     |
+| `No module named 'flask'` / `'cv2'`   | 설치를 건너뛴 경우입니다. 위 **설치** 절차(venv + `python3 -m pip install -r requirements.txt`) |
+| `No module named faradaycv`           | `faraday-cv` 폴더 밖에서 실행한 경우입니다                                                      |
+| `zsh: command not found: #`           | 명령 뒤 주석까지 복사한 경우입니다. zsh는 대화형에서 `#`을 주석으로 보지 않습니다               |
+| `externally-managed-environment`      | 시스템 파이썬에 직접 설치하려 한 경우. venv를 만들거나 `--user` 를 붙이세요                     |
 
 ## 개발
 
 ```bash
-python3 -m pytest -q          # 합성 데이터의 정답값과 대조하는 68개 테스트
-ruff check faradaycv tests && ruff format --check faradaycv tests
+python3 -m pytest -q
+ruff check faradaycv tests
+ruff format --check faradaycv tests
 ```
+
+합성 데이터의 정답값과 대조하는 79개 테스트입니다.
 
 테스트는 매번 영상을 실제로 인코딩·디코딩해서 돌립니다. 추적 오차 1.5 px 이내,
 속도 오차 0.05 m/s 이내, LED 프레임 정확 일치, 전압 정점 20 ms 이내 —
