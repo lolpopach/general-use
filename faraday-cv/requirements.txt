@@ -4,6 +4,7 @@ opencv-python-headless>=4.8   # use opencv-python instead if you want cv2.imshow
 scipy>=1.10
 matplotlib>=3.7
 flask>=3.0
+imageio-ffmpeg>=0.4           # bundled ffmpeg: converts phone video (HEVC) OpenCV cannot read
 
 # only for tools/serial_logger.py (reading the Arduino over USB)
 # pyserial>=3.5

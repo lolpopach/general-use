@@ -133,6 +133,8 @@ def run_analysis(
     )
     motion = build_motion(track, cfg.calibration)
     notes = list(track.notes)
+    if track.info is not None and track.info.note:
+        notes.append(track.info.note)
 
     led_frame: int | None = None
     led_threshold: float | None = None

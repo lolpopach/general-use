@@ -14,6 +14,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
+from .decode import VideoOpenError, readable_video, try_open
 from .segmentation import (
     Blob,
     ColorRange,
@@ -32,6 +33,7 @@ class VideoInfo:
     frame_count: int
     width: int
     height: int
+    note: str | None = None  # set when the file had to be converted first
 
     def to_dict(self) -> dict:
         return {
@@ -41,6 +43,7 @@ class VideoInfo:
             "width": self.width,
             "height": self.height,
             "duration_s": self.frame_count / self.fps if self.fps else 0.0,
+            "note": self.note,
         }
 
 
@@ -67,10 +70,12 @@ class Track:
 
 
 def open_video(path: str | Path) -> tuple[cv2.VideoCapture, VideoInfo]:
-    path = str(path)
-    cap = cv2.VideoCapture(path)
-    if not cap.isOpened():
-        raise FileNotFoundError(f"cannot open video: {path}")
+    """Open a video, converting it first if OpenCV cannot decode it as it is."""
+    source, note = readable_video(path)
+    cap, _backend = try_open(source)
+    if cap is None:  # readable_video already proved it opens; be defensive
+        raise VideoOpenError(f"cannot open video: {path}")
+    path = str(source)
     fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
     if not np.isfinite(fps) or fps <= 1e-3:
         fps = 30.0
@@ -80,6 +85,7 @@ def open_video(path: str | Path) -> tuple[cv2.VideoCapture, VideoInfo]:
         frame_count=int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0),
         width=int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0),
         height=int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0),
+        note=note,
     )
     return cap, info
 

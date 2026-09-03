@@ -285,7 +285,7 @@ function setHint(text, isError = false) {
 $("video-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
-  setHint("영상 업로드 중...");
+  setHint("영상 업로드 중... (변환이 필요한 형식이면 몇 분 걸릴 수 있습니다)");
   const body = new FormData();
   body.append("file", file);
   try {
@@ -304,7 +304,11 @@ $("video-file").addEventListener("change", async (event) => {
       프레임: out.video.frame_count,
       길이: `${out.video.duration_s.toFixed(2)} s`,
     });
-    setHint("자석을 클릭해 색을 지정하세요.");
+    setHint(
+      out.video.note
+        ? `${out.video.note} — 이제 자석을 클릭해 색을 지정하세요.`
+        : "자석을 클릭해 색을 지정하세요.",
+    );
     updateRunButton();
     await refreshFrame();
   } catch (err) {

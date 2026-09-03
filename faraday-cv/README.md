@@ -164,6 +164,22 @@ python3 tools/serial_logger.py --port /dev/ttyACM0 --out voltage.csv --seconds 2
   정렬하지 않고 **버립니다**. 정렬해 넣으면 기록 길이가 늘어나고 없는 공백이
   생기기 때문입니다. 몇 행을 버렸는지 결과에 표시됩니다.
 
+## 영상 형식
+
+- mp4·mov·avi·mkv 등을 그대로 올리면 됩니다.
+- **아이폰 영상(HEVC/H.265)** 은 OpenCV가 못 읽는 경우가 많습니다. 그럴 때는
+  같이 설치된 ffmpeg로 **H.264 고정 프레임레이트 사본을 자동 생성**해서
+  분석합니다. 첫 업로드 때 한 번만 시간이 걸리고(길이에 따라 수십 초),
+  변환본은 임시 폴더에 캐시되어 다음부터는 즉시 열립니다.
+- 변환은 **가변 프레임레이트(VFR)** 문제도 함께 해결합니다. 폰 카메라는 VFR로
+  녹화하는 경우가 많은데, 이 분석은 프레임 시각을 `프레임번호 / fps` 로 계산하므로
+  고정 프레임레이트여야 정확합니다. 가능하면 촬영 자체를 고정 fps로 하세요.
+- 직접 변환하고 싶으면:
+
+```bash
+ffmpeg -i 원본.mp4 -c:v libx264 -pix_fmt yuv420p -an swing.mp4
+```
+
 ## 실험 세팅 요령
 
 - 자석에 **배경에 없는 단색 표식**(빨강·형광 스티커)을 붙이면 세그멘테이션이
@@ -178,20 +194,21 @@ python3 tools/serial_logger.py --port /dev/ttyACM0 --out voltage.csv --seconds 2
 
 ## 잘 안 될 때
 
-| 증상                                  | 확인할 것                                                                                       |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 검출률이 낮다 (`detected in only …%`) | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                                  |
-| 덩어리가 여러 개 잡힌다               | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                                       |
-| `LED never crossed the on-threshold`  | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`로 수동 지정                           |
-| `LED region is bright in every frame` | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요              |
-| `records do not overlap`              | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                             |
-| ℰ/v가 회전점에서 폭발한다             | 정상입니다(v→0). `--v-min`을 올리세요                                                           |
-| 속도 곡선이 톱니처럼 떨린다           | `--smooth` 값을 키우세요(프레임 수, 홀수)                                                       |
-| `zsh: command not found: pip`         | macOS에는 `pip` 명령이 없습니다. `python3 -m pip` 를 쓰세요                                     |
-| `No module named 'flask'` / `'cv2'`   | 설치를 건너뛴 경우입니다. 위 **설치** 절차(venv + `python3 -m pip install -r requirements.txt`) |
-| `No module named faradaycv`           | `faraday-cv` 폴더 밖에서 실행한 경우입니다                                                      |
-| `zsh: command not found: #`           | 명령 뒤 주석까지 복사한 경우입니다. zsh는 대화형에서 `#`을 주석으로 보지 않습니다               |
-| `externally-managed-environment`      | 시스템 파이썬에 직접 설치하려 한 경우. venv를 만들거나 `--user` 를 붙이세요                     |
+| 증상                                              | 확인할 것                                                                                        |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 검출률이 낮다 (`detected in only …%`)             | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                                   |
+| 덩어리가 여러 개 잡힌다                           | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                                        |
+| `LED never crossed the on-threshold`              | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`로 수동 지정                            |
+| `LED region is bright in every frame`             | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요               |
+| `records do not overlap`                          | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                              |
+| ℰ/v가 회전점에서 폭발한다                         | 정상입니다(v→0). `--v-min`을 올리세요                                                            |
+| 속도 곡선이 톱니처럼 떨린다                       | `--smooth` 값을 키우세요(프레임 수, 홀수)                                                        |
+| `cannot read that video` / `OpenCV cannot decode` | 대개 HEVC 영상입니다. `python3 -m pip install imageio-ffmpeg` 후 다시 업로드하면 자동 변환됩니다 |
+| `zsh: command not found: pip`                     | macOS에는 `pip` 명령이 없습니다. `python3 -m pip` 를 쓰세요                                      |
+| `No module named 'flask'` / `'cv2'`               | 설치를 건너뛴 경우입니다. 위 **설치** 절차(venv + `python3 -m pip install -r requirements.txt`)  |
+| `No module named faradaycv`                       | `faraday-cv` 폴더 밖에서 실행한 경우입니다                                                       |
+| `zsh: command not found: #`                       | 명령 뒤 주석까지 복사한 경우입니다. zsh는 대화형에서 `#`을 주석으로 보지 않습니다                |
+| `externally-managed-environment`                  | 시스템 파이썬에 직접 설치하려 한 경우. venv를 만들거나 `--user` 를 붙이세요                      |
 
 ## 개발
 
