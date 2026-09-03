@@ -135,3 +135,19 @@ def test_a_malformed_colour_range_is_rejected_before_any_work(dataset):
         main(["track", str(dataset.video), "--hsv", "1,2,3", "-o", "unused.csv"])
     assert exc.value.code == 2
     assert not Path("unused.csv").exists()
+
+
+def test_doctor_passes_a_healthy_video(dataset, capsys):
+    assert main(["doctor", str(dataset.video)]) == 0
+    printed = capsys.readouterr().out
+    assert "verdict" in printed and "fine" in printed
+
+
+def test_doctor_fails_and_explains_a_part_copied_video(dataset, tmp_path, capsys):
+    cut = tmp_path / "half.mp4"
+    data = dataset.video.read_bytes()
+    cut.write_bytes(data[: len(data) // 2])
+    assert main(["doctor", str(cut)]) == 1
+    printed = capsys.readouterr().out
+    assert "moov" in printed
+    assert "re-copy" in printed or "re-export" in printed

@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -176,14 +177,216 @@ def readable_video(
 
 
 def _cannot_open_message(path: Path) -> str:
-    backends = ", ".join(name for name, _ in available_backends()) or "none"
+    """Explain the actual defect, rather than guessing at the codec."""
     size_mb = path.stat().st_size / 1e6
+    try:
+        report = diagnose(path)
+    except Exception:  # diagnosis must never mask the original failure
+        return (
+            f"cannot read {path.name} ({size_mb:.1f} MB), and the file could not "
+            "be inspected either"
+        )
     return (
-        f"OpenCV cannot decode {path.name} ({size_mb:.1f} MB). "
-        f"Backends tried: {backends}. "
-        "Phone video is often HEVC/H.265, which many OpenCV builds cannot read. "
-        "Install the bundled converter with "
-        "'python3 -m pip install imageio-ffmpeg' and try again, or convert the "
-        f"file yourself: ffmpeg -i {path.name} -c:v libx264 -pix_fmt yuv420p "
-        "-an converted.mp4"
+        f"cannot read {path.name} ({size_mb:.1f} MB): {report.verdict}. "
+        f"What to do: {report.advice}. "
+        f"For the full report run: python3 -m faradaycv doctor '{path}'"
+    )
+
+
+# --------------------------------------------------------------------- doctor
+
+#: Leading bytes that identify a container we might be handed.
+_SIGNATURES = {
+    b"\x1aE\xdf\xa3": "Matroska/WebM",
+    b"RIFF": "AVI (RIFF)",
+    b"OggS": "Ogg",
+    b"FLV\x01": "FLV",
+}
+
+#: Top-level MP4/MOV boxes that carry no meaning for us, so seeing only these
+#: means the interesting parts of the file are missing.
+_FILLER_BOXES = {"free", "skip", "wide", "pnot"}
+
+
+@dataclass
+class VideoDiagnosis:
+    """What is actually wrong with a file that will not open."""
+
+    path: Path
+    size_bytes: int
+    container: str | None
+    boxes: list[tuple[str, int]]
+    opencv_backend: str | None
+    ffmpeg_error: str | None
+    verdict: str
+    advice: str
+
+    @property
+    def opencv_ok(self) -> bool:
+        return self.opencv_backend is not None
+
+    @property
+    def ffmpeg_ok(self) -> bool:
+        return self.ffmpeg_error is None
+
+    def box_names(self) -> list[str]:
+        return [name for name, _size in self.boxes]
+
+    def to_text(self) -> str:
+        lines = [
+            f"file          : {self.path}",
+            f"size          : {self.size_bytes / 1e6:.1f} MB",
+            f"container     : {self.container or 'unrecognised'}",
+        ]
+        if self.boxes:
+            shown = ", ".join(f"{n}({s / 1e6:.1f}MB)" for n, s in self.boxes[:8])
+            lines.append(f"mp4 boxes     : {shown}")
+        lines += [
+            f"OpenCV        : {'opens with ' + self.opencv_backend if self.opencv_ok else 'cannot open'}",
+            f"ffmpeg        : {'reads it' if self.ffmpeg_ok else self.ffmpeg_error}",
+            "",
+            f"verdict       : {self.verdict}",
+            f"what to do    : {self.advice}",
+        ]
+        return "\n".join(lines)
+
+
+def _read_mp4_boxes(path: Path, limit: int = 40) -> list[tuple[str, int]]:
+    """Walk the top-level MP4/MOV boxes without decoding anything."""
+    boxes: list[tuple[str, int]] = []
+    size = path.stat().st_size
+    with path.open("rb") as fh:
+        offset = 0
+        while offset < size and len(boxes) < limit:
+            fh.seek(offset)
+            header = fh.read(8)
+            if len(header) < 8:
+                break
+            box_size = int.from_bytes(header[:4], "big")
+            name = header[4:8].decode("latin-1")
+            if not name.isprintable():
+                break
+            if box_size == 1:  # 64-bit size follows the header
+                extended = fh.read(8)
+                if len(extended) < 8:
+                    break
+                box_size = int.from_bytes(extended, "big")
+            elif box_size == 0:  # runs to the end of the file
+                box_size = size - offset
+            if box_size < 8:
+                break
+            boxes.append((name, box_size))
+            offset += box_size
+    return boxes
+
+
+def _container_of(head: bytes, boxes: list[tuple[str, int]]) -> str | None:
+    for magic, name in _SIGNATURES.items():
+        if head.startswith(magic):
+            return name
+    if boxes and boxes[0][0] == "ftyp":
+        brand = head[8:12].decode("latin-1", "replace").strip()
+        return f"MP4/MOV (brand {brand})"
+    return None
+
+
+def _ffmpeg_check(path: Path, timeout: float = 60.0) -> str | None:
+    """None if ffmpeg can read the file, else its complaint."""
+    ffmpeg = ffmpeg_binary()
+    if ffmpeg is None:
+        return "ffmpeg is not installed"
+    cmd = [
+        ffmpeg,
+        "-hide_banner",
+        "-v",
+        "error",
+        "-i",
+        str(path),
+        "-t",
+        "0.1",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "ffmpeg timed out reading the file"
+    if result.returncode == 0:
+        return None
+    lines = [ln for ln in (result.stderr or "").strip().splitlines() if ln]
+    return lines[0][:200] if lines else f"exit code {result.returncode}"
+
+
+def diagnose(path: str | Path) -> VideoDiagnosis:
+    """Say what is wrong with a video file, in terms the user can act on."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"no such file: {path}")
+    size = path.stat().st_size
+    with path.open("rb") as fh:
+        head = fh.read(32)
+    boxes = _read_mp4_boxes(path) if head[4:8] == b"ftyp" else []
+    container = _container_of(head, boxes)
+
+    cap, backend = try_open(path)
+    if cap is not None:
+        cap.release()
+    ffmpeg_error = _ffmpeg_check(path)
+
+    names = {name for name, _ in boxes}
+    verdict, advice = _verdict(
+        size, container, names, backend is not None, ffmpeg_error
+    )
+    return VideoDiagnosis(
+        path=path,
+        size_bytes=size,
+        container=container,
+        boxes=boxes,
+        opencv_backend=backend,
+        ffmpeg_error=ffmpeg_error,
+        verdict=verdict,
+        advice=advice,
+    )
+
+
+def _verdict(
+    size: int,
+    container: str | None,
+    boxes: set[str],
+    opencv_ok: bool,
+    ffmpeg_error: str | None,
+) -> tuple[str, str]:
+    if size == 0:
+        return ("the file is empty", "copy the video across again")
+    if opencv_ok:
+        return ("the file is fine -- OpenCV reads it directly", "nothing to do")
+    if ffmpeg_error is None:
+        return (
+            "OpenCV cannot decode this codec, but ffmpeg can",
+            "faraday-cv will convert it automatically; just upload it again",
+        )
+    if container is None:
+        return (
+            "this is not a video container faraday-cv recognises",
+            "check that the file really is the video, and not a placeholder, an "
+            "alias, or a partially downloaded iCloud item",
+        )
+    if boxes and "moov" not in boxes:
+        missing = "only " + ", ".join(sorted(boxes)) if boxes else "nothing"
+        return (
+            f"the MP4 index (moov atom) is missing -- the file holds {missing}, "
+            "so it is incomplete, not merely an odd codec",
+            "the copy stopped early: re-copy or re-export the whole video (in "
+            "Photos use File > Export > Export Unmodified Original, and wait for "
+            "the iCloud download to finish), then check the byte size matches",
+        )
+    if boxes <= _FILLER_BOXES | {"ftyp"}:
+        return (
+            "the file has a header but no video data",
+            "re-export the video; this copy carries no frames",
+        )
+    return (
+        f"ffmpeg cannot read the file either: {ffmpeg_error}",
+        "the file is damaged; re-copy it from the camera or phone",
     )

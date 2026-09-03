@@ -86,7 +86,9 @@ python3 -m faradaycv serve
 
 브라우저에서 순서대로:
 
-1. **영상 업로드** — mp4/mov/avi 등
+1. **영상 업로드** — mp4/mov/avi 등. 용량이 큰 영상은 업로드 대신
+   **파일 경로**(`/Users/이름/Movies/swing.mp4`)를 입력해 바로 열 수 있습니다.
+   같은 컴퓨터에서 도는 도구라 복사 없이 원본을 그대로 읽습니다
 2. **자석 클릭** → HSV 범위 자동 설정, 슬라이더로 미세조정
    (초록색으로 칠해진 부분이 "자석으로 인식된 픽셀")
 3. **코일 위치 클릭**, **길이 보정 드래그**(아는 길이를 mm로 입력),
@@ -111,6 +113,7 @@ python3 -m faradaycv serve
 | 명령      | 하는 일                                    |
 | --------- | ------------------------------------------ |
 | `info`    | fps, 프레임 수, 해상도                     |
+| `doctor`  | 안 열리는 영상의 원인 진단                 |
 | `frame`   | 한 프레임을 이미지로 저장 (색 좌표 찾기용) |
 | `pick`    | 지정한 픽셀에서 HSV 범위 추정              |
 | `track`   | 프레임별 중심좌표 CSV                      |
@@ -180,6 +183,19 @@ python3 tools/serial_logger.py --port /dev/ttyACM0 --out voltage.csv --seconds 2
 ffmpeg -i 원본.mp4 -c:v libx264 -pix_fmt yuv420p -an swing.mp4
 ```
 
+- 영상이 안 열리면 **원인부터 확인**하세요. 코덱 문제인지, 파일이 잘린 것인지,
+  아예 동영상이 아닌지를 구분해 알려줍니다:
+
+```bash
+python3 -m faradaycv doctor /경로/swing.mp4
+```
+
+`moov atom is missing` 이 나오면 코덱이 아니라 **파일이 불완전한 것**입니다.
+MP4는 재생에 필요한 색인(`moov`)이 파일 끝에 있어서, 복사나 업로드가 중간에
+끊기면 크기는 그럴듯한데 아무 프로그램도 못 여는 파일이 됩니다.
+아이폰이라면 사진 앱에서 **파일 > 내보내기 > 원본 내보내기**로 다시 뽑고,
+iCloud 다운로드가 끝날 때까지 기다린 뒤 바이트 크기를 비교하세요.
+
 ## 실험 세팅 요령
 
 - 자석에 **배경에 없는 단색 표식**(빨강·형광 스티커)을 붙이면 세그멘테이션이
@@ -194,21 +210,23 @@ ffmpeg -i 원본.mp4 -c:v libx264 -pix_fmt yuv420p -an swing.mp4
 
 ## 잘 안 될 때
 
-| 증상                                              | 확인할 것                                                                                        |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 검출률이 낮다 (`detected in only …%`)             | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                                   |
-| 덩어리가 여러 개 잡힌다                           | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                                        |
-| `LED never crossed the on-threshold`              | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`로 수동 지정                            |
-| `LED region is bright in every frame`             | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요               |
-| `records do not overlap`                          | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                              |
-| ℰ/v가 회전점에서 폭발한다                         | 정상입니다(v→0). `--v-min`을 올리세요                                                            |
-| 속도 곡선이 톱니처럼 떨린다                       | `--smooth` 값을 키우세요(프레임 수, 홀수)                                                        |
-| `cannot read that video` / `OpenCV cannot decode` | 대개 HEVC 영상입니다. `python3 -m pip install imageio-ffmpeg` 후 다시 업로드하면 자동 변환됩니다 |
-| `zsh: command not found: pip`                     | macOS에는 `pip` 명령이 없습니다. `python3 -m pip` 를 쓰세요                                      |
-| `No module named 'flask'` / `'cv2'`               | 설치를 건너뛴 경우입니다. 위 **설치** 절차(venv + `python3 -m pip install -r requirements.txt`)  |
-| `No module named faradaycv`                       | `faraday-cv` 폴더 밖에서 실행한 경우입니다                                                       |
-| `zsh: command not found: #`                       | 명령 뒤 주석까지 복사한 경우입니다. zsh는 대화형에서 `#`을 주석으로 보지 않습니다                |
-| `externally-managed-environment`                  | 시스템 파이썬에 직접 설치하려 한 경우. venv를 만들거나 `--user` 를 붙이세요                      |
+| 증상                                          | 확인할 것                                                                                       |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 검출률이 낮다 (`detected in only …%`)         | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                                  |
+| 덩어리가 여러 개 잡힌다                       | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                                       |
+| `LED never crossed the on-threshold`          | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`로 수동 지정                           |
+| `LED region is bright in every frame`         | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요              |
+| `records do not overlap`                      | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                             |
+| ℰ/v가 회전점에서 폭발한다                     | 정상입니다(v→0). `--v-min`을 올리세요                                                           |
+| 속도 곡선이 톱니처럼 떨린다                   | `--smooth` 값을 키우세요(프레임 수, 홀수)                                                       |
+| `cannot read that video`                      | `python3 -m faradaycv doctor 파일` 로 원인을 먼저 확인하세요                                    |
+| `moov atom is missing` / `Invalid data found` | 코덱이 아니라 **잘린 파일**입니다. 원본을 다시 내보내거나 다시 복사하세요                       |
+| `the upload was cut short`                    | 업로드가 끊겼습니다. 다시 시도하거나 **경로로 열기**를 쓰세요                                   |
+| `zsh: command not found: pip`                 | macOS에는 `pip` 명령이 없습니다. `python3 -m pip` 를 쓰세요                                     |
+| `No module named 'flask'` / `'cv2'`           | 설치를 건너뛴 경우입니다. 위 **설치** 절차(venv + `python3 -m pip install -r requirements.txt`) |
+| `No module named faradaycv`                   | `faraday-cv` 폴더 밖에서 실행한 경우입니다                                                      |
+| `zsh: command not found: #`                   | 명령 뒤 주석까지 복사한 경우입니다. zsh는 대화형에서 `#`을 주석으로 보지 않습니다               |
+| `externally-managed-environment`              | 시스템 파이썬에 직접 설치하려 한 경우. venv를 만들거나 `--user` 를 붙이세요                     |
 
 ## 개발
 

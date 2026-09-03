@@ -12,6 +12,7 @@ import pytest
 from faradaycv.decode import (
     VideoOpenError,
     available_backends,
+    diagnose,
     ffmpeg_binary,
     readable_video,
     try_open,
@@ -52,8 +53,48 @@ def test_an_undecodable_file_explains_what_to_do(tmp_path):
         readable_video(junk)
     message = str(exc.value)
     assert "broken.mp4" in message
-    assert "HEVC" in message  # names the usual cause
-    assert "ffmpeg -i" in message  # and gives a command that fixes it
+    assert "not a video container" in message
+    assert "doctor" in message  # points at the full report
+    assert "HEVC" not in message, "must not blame the codec when it is not one"
+
+
+def _truncate(source, target, fraction=0.6):
+    """A part-copied MP4: header and data, but no index at the end."""
+    data = source.read_bytes()
+    target.write_bytes(data[: int(len(data) * fraction)])
+    return target
+
+
+def test_a_part_copied_video_is_named_as_incomplete(dataset, tmp_path):
+    """The failure a large upload actually produces, and the one to name."""
+    cut = _truncate(dataset.video, tmp_path / "half.mp4")
+    report = diagnose(cut)
+
+    assert report.container and report.container.startswith("MP4/MOV")
+    assert "moov" not in report.box_names(), "the index is what a cut copy loses"
+    assert "mdat" in report.box_names()
+    assert not report.opencv_ok and not report.ffmpeg_ok
+    assert "moov" in report.verdict and "incomplete" in report.verdict
+    assert "re-copy" in report.advice or "re-export" in report.advice
+
+
+def test_a_healthy_video_is_reported_as_healthy(dataset):
+    report = diagnose(dataset.video)
+    assert report.opencv_ok and report.ffmpeg_ok
+    assert set(report.box_names()) >= {"ftyp", "mdat", "moov"}
+    assert "fine" in report.verdict
+    assert "size" in report.to_text() and "verdict" in report.to_text()
+
+
+def test_an_empty_file_diagnoses_as_empty(tmp_path):
+    empty = tmp_path / "nothing.mp4"
+    empty.write_bytes(b"")
+    assert "empty" in diagnose(empty).verdict
+
+
+def test_diagnosis_needs_the_file_to_exist(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        diagnose(tmp_path / "ghost.mp4")
 
 
 @pytest.mark.skipif(ffmpeg_binary() is None, reason="no ffmpeg available")

@@ -133,12 +133,45 @@ def create_app(workdir: str | Path | None = None) -> Flask:
         target = root / secure_filename(file.filename)
         file.save(target)
 
-        session = Session(sid=sid, root=root, video=target)
-        try:
-            session.info = probe(target).to_dict()
-        except Exception as exc:
+        # A large upload that stops early leaves a plausible-looking file whose
+        # video index is missing.  The browser tells us how big it should be, so
+        # say "the upload was cut short" instead of "this codec is unsupported".
+        expected = request.form.get("size", type=int)
+        received = target.stat().st_size
+        if expected and received != expected:
             shutil.rmtree(root, ignore_errors=True)
-            raise ValueError(f"cannot read that video: {exc}") from exc
+            raise ValueError(
+                f"the upload was cut short: {received / 1e6:.1f} MB arrived out of "
+                f"{expected / 1e6:.1f} MB. Try again, or open the file by path "
+                "instead of uploading it (see the field under the file picker)."
+            )
+
+        session = _start_session(sid, root, target)
+        with lock:
+            sessions[sid] = session
+        return jsonify(session.public())
+
+    @app.post("/api/video/path")
+    def open_video_path():
+        """Analyse a file where it already is -- no copy, no upload wait."""
+        data = request.get_json(force=True)
+        raw = (data.get("path") or "").strip().strip("'\"")
+        if not raw:
+            raise ValueError("no path given")
+        target = Path(raw).expanduser()
+        if not target.is_absolute():
+            raise ValueError(f"give the full path, starting from / : {raw}")
+        if not target.exists() or not target.is_file():
+            raise ValueError(f"no such file: {target}")
+        if target.suffix.lower() not in VIDEO_SUFFIXES:
+            raise ValueError(
+                f"unsupported video type {target.suffix!r}; use one of "
+                + ", ".join(sorted(VIDEO_SUFFIXES))
+            )
+        sid = uuid.uuid4().hex[:12]
+        root = base / sid
+        root.mkdir(parents=True, exist_ok=True)
+        session = _start_session(sid, root, target, cleanup=root)
         with lock:
             sessions[sid] = session
         return jsonify(session.public())
@@ -248,6 +281,19 @@ def create_app(workdir: str | Path | None = None) -> Flask:
         return send_file(path, max_age=0)
 
     return app
+
+
+def _start_session(
+    sid: str, root: Path, video: Path, cleanup: Path | None = None
+) -> Session:
+    """Probe the video (converting it if need be) and build the session."""
+    session = Session(sid=sid, root=root, video=video)
+    try:
+        session.info = probe(video).to_dict()
+    except Exception as exc:
+        shutil.rmtree(cleanup or root, ignore_errors=True)
+        raise ValueError(f"cannot read that video: {exc}") from exc
+    return session
 
 
 def _run_job(session: Session, cfg: AnalysisConfig) -> None:

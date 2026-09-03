@@ -288,31 +288,52 @@ $("video-file").addEventListener("change", async (event) => {
   setHint("영상 업로드 중... (변환이 필요한 형식이면 몇 분 걸릴 수 있습니다)");
   const body = new FormData();
   body.append("file", file);
+  body.append("size", file.size);
   try {
     const out = await api("/api/video", { method: "POST", body });
-    state.sid = out.session;
-    state.info = out.video;
-    canvas.width = out.video.width;
-    canvas.height = out.video.height;
-    $("frame-slider").max = Math.max(0, out.video.frame_count - 1);
-    $("frame-slider").value = 0;
-    state.frame = 0;
-    $("video-info").innerHTML = infoRows({
-      파일: file.name,
-      크기: `${out.video.width} × ${out.video.height}`,
-      fps: out.video.fps.toFixed(2),
-      프레임: out.video.frame_count,
-      길이: `${out.video.duration_s.toFixed(2)} s`,
-    });
-    setHint(
-      out.video.note
-        ? `${out.video.note} — 이제 자석을 클릭해 색을 지정하세요.`
-        : "자석을 클릭해 색을 지정하세요.",
-    );
-    updateRunButton();
-    await refreshFrame();
+    await adoptVideo(out, file.name);
   } catch (err) {
     setHint(`업로드 실패: ${err.message}`, true);
+  }
+});
+
+async function adoptVideo(out, name) {
+  state.sid = out.session;
+  state.info = out.video;
+  canvas.width = out.video.width;
+  canvas.height = out.video.height;
+  $("frame-slider").max = Math.max(0, out.video.frame_count - 1);
+  $("frame-slider").value = 0;
+  state.frame = 0;
+  $("video-info").innerHTML = infoRows({
+    파일: name,
+    크기: `${out.video.width} × ${out.video.height}`,
+    fps: out.video.fps.toFixed(2),
+    프레임: out.video.frame_count,
+    길이: `${out.video.duration_s.toFixed(2)} s`,
+  });
+  setHint(
+    out.video.note
+      ? `${out.video.note} — 이제 자석을 클릭해 색을 지정하세요.`
+      : "자석을 클릭해 색을 지정하세요.",
+  );
+  updateRunButton();
+  await refreshFrame();
+}
+
+$("open-path").addEventListener("click", async () => {
+  const path = $("video-path").value.trim();
+  if (!path) return;
+  setHint("파일 여는 중...");
+  try {
+    const out = await api("/api/video/path", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    await adoptVideo(out, path.split("/").pop());
+  } catch (err) {
+    setHint(`열기 실패: ${err.message}`, true);
   }
 });
 

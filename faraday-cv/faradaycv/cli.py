@@ -95,6 +95,15 @@ def cmd_frame(args) -> int:
     return 0
 
 
+def cmd_doctor(args) -> int:
+    """Say why a video will not open, and what to do about it."""
+    from .decode import diagnose
+
+    report = diagnose(args.video)
+    print(report.to_text())
+    return 0 if (report.opencv_ok or report.ffmpeg_ok) else 1
+
+
 def cmd_pick(args) -> int:
     frame = read_frame(args.video, args.index)
     x, y = (int(v) for v in args.at)
@@ -264,6 +273,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_info = sub.add_parser("info", help="print fps, frame count and size")
     p_info.add_argument("video")
     p_info.set_defaults(func=cmd_info)
+
+    p_doctor = sub.add_parser("doctor", help="diagnose a video that will not open")
+    p_doctor.add_argument("video")
+    p_doctor.set_defaults(func=cmd_doctor)
 
     p_frame = sub.add_parser("frame", help="save one frame as an image")
     p_frame.add_argument("video")

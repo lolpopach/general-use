@@ -198,3 +198,69 @@ def _wait(client, sid, timeout=90.0):
             return state
         time.sleep(0.1)
     raise AssertionError("the analysis did not finish in time")
+
+
+def test_a_cut_short_upload_is_named_as_such(client, dataset):
+    """A part-arrived file must not be reported as an unsupported codec."""
+    data = {
+        "file": (io.BytesIO(dataset.video.read_bytes()), "swing.mp4"),
+        "size": str(dataset.video.stat().st_size + 5_000_000),  # browser saw more
+    }
+    res = client.post("/api/video", data=data, content_type="multipart/form-data")
+    assert res.status_code == 400
+    error = res.get_json()["error"]
+    assert "cut short" in error
+    assert "by path" in error  # offers the way around a huge upload
+
+
+def test_a_matching_size_passes_the_integrity_check(client, dataset, truth):
+    data = {
+        "file": (io.BytesIO(dataset.video.read_bytes()), "swing.mp4"),
+        "size": str(dataset.video.stat().st_size),
+    }
+    out = client.post(
+        "/api/video", data=data, content_type="multipart/form-data"
+    ).get_json()
+    assert out["video"]["frame_count"] == truth["n_frames"]
+
+
+def test_a_local_file_can_be_opened_by_path_without_uploading(client, dataset, truth):
+    out = client.post("/api/video/path", json={"path": str(dataset.video)}).get_json()
+    assert out["video"]["frame_count"] == truth["n_frames"]
+    sid = out["session"]
+    # the session works exactly like an uploaded one
+    stats = client.post(
+        f"/api/session/{sid}/preview",
+        json={
+            "index": 0,
+            "color": {
+                "h_lo": 170,
+                "h_hi": 10,
+                "s_lo": 120,
+                "s_hi": 255,
+                "v_lo": 80,
+                "v_hi": 255,
+            },
+            "segment": {"min_area": 60},
+            "stats": True,
+        },
+    ).get_json()
+    assert stats["blobs"] == 1
+
+
+def test_opening_by_path_rejects_what_it_should(client, dataset, tmp_path):
+    for payload, expected in [
+        ({"path": ""}, "no path"),
+        ({"path": "swing.mp4"}, "full path"),
+        ({"path": str(tmp_path / "ghost.mp4")}, "no such file"),
+        ({"path": str(dataset.voltage)}, "unsupported video type"),
+    ]:
+        res = client.post("/api/video/path", json=payload)
+        assert res.status_code == 400, payload
+        assert expected in res.get_json()["error"]
+
+
+def test_a_quoted_path_pasted_from_finder_still_works(client, dataset):
+    """Dragging a file into a terminal or field often brings quotes with it."""
+    out = client.post("/api/video/path", json={"path": f"'{dataset.video}'"}).get_json()
+    assert "session" in out
