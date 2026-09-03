@@ -266,20 +266,22 @@ def test_a_quoted_path_pasted_from_finder_still_works(client, dataset):
     assert "session" in out
 
 
-def test_a_public_server_refuses_to_open_local_paths(tmp_path, dataset):
-    """Served to other machines, the path endpoint would read any file."""
+def test_a_public_server_refuses_server_side_video_decoding(tmp_path, dataset):
+    """Server-side decoding is exactly the load a public deployment can't carry."""
     app = create_app(workdir=tmp_path / "public", local_mode=False)
     app.config.update(TESTING=True)
     public = app.test_client()
 
     assert public.get("/api/config").get_json()["local_mode"] is False
+
     res = public.post("/api/video/path", json={"path": str(dataset.video)})
     assert res.status_code == 403
-    assert "own machine" in res.get_json()["error"]
-    # uploading still works, so the public deployment is not crippled
+    assert "local install" in res.get_json()["error"]
+
     data = {"file": (io.BytesIO(dataset.video.read_bytes()), "swing.mp4")}
-    ok = public.post("/api/video", data=data, content_type="multipart/form-data")
-    assert ok.status_code == 200
+    upload = public.post("/api/video", data=data, content_type="multipart/form-data")
+    assert upload.status_code == 403
+    assert "local install" in upload.get_json()["error"]
 
 
 def test_local_mode_is_the_default_and_is_advertised(client):
@@ -291,3 +293,175 @@ def test_the_environment_can_turn_local_mode_off(tmp_path, dataset, monkeypatch)
     app = create_app(workdir=tmp_path / "env")
     app.config.update(TESTING=True)
     assert app.test_client().get("/api/config").get_json()["local_mode"] is False
+
+
+def _fake_track_payload(truth, offset_s=0.0):
+    """A JSON track shaped like what tracker.js would send -- ground truth in disguise."""
+    frames = truth["magnet_px"]
+    fps = truth["fps"]
+    t = [i / fps + offset_s for i in range(len(frames))]
+    return {
+        "t": t,
+        "x": [p[0] for p in frames],
+        "y": [p[1] for p in frames],
+        "width": 640,
+        "height": 480,
+        "fps": fps,
+        "name": "browser-tracked.mp4",
+    }
+
+
+def test_analyze_accepts_a_browser_track_with_no_video_upload(client, dataset, truth):
+    """The whole point: results without ever sending a video to the server."""
+    payload = _fake_track_payload(truth)
+    body = {
+        "track": json.dumps(payload),
+        "config": json.dumps(
+            {
+                "calibration": {
+                    "mm_per_px": truth["mm_per_px"],
+                    "coil_px": truth["coil_px"],
+                },
+                "t0_video": truth["t0_video_s"],
+                "title": "browser run",
+            }
+        ),
+        "voltage": (dataset.voltage.open("rb"), "voltage.csv"),
+    }
+    res = client.post("/api/analyze", data=body, content_type="multipart/form-data")
+    assert res.status_code == 200, res.get_json()
+    out = res.get_json()
+    result = out["result"]
+    assert result["stats"]["max_abs_voltage_mV"] == pytest.approx(
+        truth["max_abs_emf_mV"], rel=0.03
+    )
+    assert result["detection_rate"] == 1.0
+
+    sid = out["session"]
+    fig = client.get(f"/api/session/{sid}/file/fig2_motion_and_voltage.png")
+    assert fig.status_code == 200 and len(fig.data) > 10_000
+
+
+def test_analyze_works_without_a_voltage_file_too(client, truth):
+    payload = _fake_track_payload(truth)
+    body = {"track": json.dumps(payload), "config": json.dumps({})}
+    res = client.post("/api/analyze", data=body, content_type="multipart/form-data")
+    assert res.status_code == 200
+    result = res.get_json()["result"]
+    assert result["stats"] == {}
+    assert result["detection_rate"] == 1.0
+
+
+def test_analyze_is_available_in_public_mode(tmp_path, truth):
+    """This endpoint is exactly what public mode is built around."""
+    app = create_app(workdir=tmp_path / "public", local_mode=False)
+    app.config.update(TESTING=True)
+    public = app.test_client()
+    payload = _fake_track_payload(truth)
+    body = {"track": json.dumps(payload), "config": json.dumps({})}
+    res = public.post("/api/analyze", data=body, content_type="multipart/form-data")
+    assert res.status_code == 200
+
+
+def test_analyze_rejects_a_track_with_no_data(client):
+    res = client.post(
+        "/api/analyze", data={"config": "{}"}, content_type="multipart/form-data"
+    )
+    assert res.status_code == 400
+    assert "no track data" in res.get_json()["error"]
+
+
+def test_analyze_rejects_malformed_track_json(client):
+    res = client.post(
+        "/api/analyze",
+        data={"track": "not json", "config": "{}"},
+        content_type="multipart/form-data",
+    )
+    assert res.status_code == 400
+    assert "malformed track data" in res.get_json()["error"]
+
+
+def test_analyze_rejects_a_track_too_short_to_analyse(client):
+    body = {"track": json.dumps({"t": [0.0], "x": [1.0], "y": [1.0]})}
+    res = client.post("/api/analyze", data=body, content_type="multipart/form-data")
+    assert res.status_code == 400
+    assert "cannot use this track" in res.get_json()["error"]
+
+
+def test_analyze_reports_dropped_detections_from_the_browser(client, truth):
+    """The browser reports a missed frame as null; that must survive intact."""
+    payload = _fake_track_payload(truth)
+    payload["x"][5] = None
+    payload["y"][5] = None
+    body = {"track": json.dumps(payload), "config": json.dumps({})}
+    res = client.post("/api/analyze", data=body, content_type="multipart/form-data")
+    assert res.status_code == 200
+    assert res.get_json()["result"]["detection_rate"] < 1.0
+
+
+def test_analyze_a_scale_line_calibration(client, truth):
+    payload = _fake_track_payload(truth)
+    body = {
+        "track": json.dumps(payload),
+        "config": json.dumps(
+            {
+                "calibration": {
+                    "scale_line": {
+                        "x0": 0,
+                        "y0": 0,
+                        "x1": 100,
+                        "y1": 0,
+                        "length_mm": 250,
+                    }
+                }
+            }
+        ),
+    }
+    res = client.post("/api/analyze", data=body, content_type="multipart/form-data")
+    assert res.status_code == 200
+    sid = res.get_json()["session"]
+    summary = json.loads(client.get(f"/api/session/{sid}/file/summary.json").data)
+    assert summary["config"]["calibration"]["mm_per_px"] == pytest.approx(2.5)
+
+
+def test_sweep_once_removes_only_directories_older_than_the_cutoff(tmp_path):
+    import os
+    import time
+
+    from faradaycv.webapp import _sweep_once
+
+    old = tmp_path / "old-session"
+    old.mkdir()
+    (old / "out.txt").write_text("x")
+    new = tmp_path / "new-session"
+    new.mkdir()
+
+    old_time = time.time() - 3600
+    os.utime(old, (old_time, old_time))
+
+    removed = _sweep_once(tmp_path, cutoff=time.time() - 60)
+    assert removed == [old]
+    assert not old.exists()
+    assert new.exists()
+
+
+def test_sweep_once_ignores_files_and_tolerates_a_missing_base(tmp_path):
+    from faradaycv.webapp import _sweep_once
+
+    (tmp_path / "stray.txt").write_text("not a session")
+    assert _sweep_once(tmp_path, cutoff=float("inf")) == []
+    assert _sweep_once(tmp_path / "does-not-exist", cutoff=0.0) == []
+
+
+def test_create_app_starts_a_cleanup_sweep_that_can_be_disabled(tmp_path):
+    """A ttl of 0 must not spawn the background thread at all."""
+    import threading
+
+    before = {t.name for t in threading.enumerate()}
+    create_app(workdir=tmp_path / "no-sweep", session_ttl_minutes=0)
+    after = {t.name for t in threading.enumerate()}
+    assert "faraday-cv-cleanup" not in (after - before)
+
+    create_app(workdir=tmp_path / "with-sweep", session_ttl_minutes=60)
+    names = {t.name for t in threading.enumerate()}
+    assert "faraday-cv-cleanup" in names

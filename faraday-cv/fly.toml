@@ -1,0 +1,23 @@
+# Fly.io: run `fly launch` from the faraday-cv/ directory (it will find
+# this file and the Dockerfile), or `fly deploy` once an app already exists.
+# Free-allowance-sized: 256 MB is enough since the server never decodes video.
+app = "faraday-cv"
+primary_region = "nrt" # change to whatever region is closest to your users
+
+[build]
+
+[env]
+  FARADAYCV_LOCAL_MODE = "0"
+  FARADAYCV_SESSION_TTL_MINUTES = "60"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

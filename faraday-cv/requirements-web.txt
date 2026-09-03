@@ -1,0 +1,19 @@
+# Lightweight requirements for a hosted deployment (Render, Fly.io, ...).
+#
+#     pip install -r requirements-web.txt
+#     python3 -m faradaycv serve --public
+#
+# The server never decodes video in this mode -- the browser does the
+# colour segmentation (static/cv.js, static/tracker.js) and only sends a
+# per-frame centroid track plus the separately-uploaded Arduino log.  That
+# means no OpenCV and no ffmpeg on the server: just numpy/scipy for the
+# physics and matplotlib for the figures, which keeps the image small and
+# the free-tier CPU/RAM budget comfortable.
+#
+# For a local install (or to run the CLI, which does decode video with
+# OpenCV), use requirements.txt instead.
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+flask>=3.0
+gunicorn>=21  # the production WSGI server; see render.yaml / fly.toml

@@ -2,9 +2,15 @@
 
 패러데이 법칙 진자 실험용 **컬러 세그멘테이션 영상 분석 도구**.
 
-웹캠으로 찍은 진자 자석 영상에서 색으로 자석을 추적해 **위치·순간속도**를 뽑고,
-따로 업로드한 **아두이노 전압 로그**를 LED 타이밍 신호로 동기화해서, 하나의
-시간축 위에 논문용 그래프를 그립니다.
+진자 자석 영상에서 색으로 자석을 추적해 **위치·순간속도**를 뽑고, 따로 올린
+**아두이노 전압 로그**를 LED 타이밍 신호로 동기화해서, 하나의 시간축 위에
+논문용 그래프를 그립니다.
+
+**영상 추적은 브라우저 안에서** 일어납니다 (컬러 세그멘테이션을 JS로 재구현).
+서버는 그 결과(좌표 몇 개)와 전압 로그를 받아 물리량을 계산하고 그래프만
+그립니다 — 영상 자체는 어디로도 업로드되지 않습니다. 그래서 이 서버는
+가벼운 무료 티어(Render, Fly.io 등)에 그대로 올려 여러 사람이 같이 쓸 수
+있습니다. 자기 컴퓨터에서만 쓸 거라면 그냥 로컬에서 실행해도 됩니다.
 
 > 관련 논문: _Beyond "Faster Magnet, More Voltage": A Quantitative Faraday's Law
 > Experiment Using Computer Vision_ — 코일을 최하점이 아니라 **회전점(turning
@@ -26,7 +32,14 @@
 
 ---
 
-## 설치
+## 웹으로 바로 쓰기
+
+누군가 이미 배포해 둔 주소가 있다면 그냥 브라우저로 열면 됩니다. 설치할 것도
+없고, 영상은 그 사람의 서버로도 전송되지 않습니다 (브라우저 안에서만 처리).
+
+직접 배포하려면 [배포](#배포-웹-서비스로-올리기) 절을 보세요.
+
+## 로컬에서 웹 UI 실행
 
 가상환경을 만들어 설치하는 것을 권합니다 (macOS 기본 파이썬에서 `pip install`이
 `externally-managed-environment` 오류를 내는 것을 피할 수 있습니다).
@@ -36,18 +49,38 @@ cd faraday-cv
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements.txt
+python3 -m faradaycv serve
 ```
 
-- 두 번째 실행부터는 `source .venv/bin/activate` 한 줄이면 됩니다.
+- 두 번째 실행부터는 `source .venv/bin/activate` 후 마지막 줄만 하면 됩니다.
 - Windows는 `python3` 대신 `py`, 활성화는 `.venv\Scripts\activate`.
 - macOS·Linux에 `pip` 명령이 없어도 됩니다. 항상 `python3 -m pip` 를 쓰세요.
 - 아래 명령들은 **`faraday-cv` 폴더 안에서** 실행합니다.
   `No module named faradaycv` 오류는 대부분 다른 폴더에 있다는 뜻입니다.
 
+터미널에 뜨는 주소(기본 `http://127.0.0.1:8000`)를 브라우저에서 열고, 끌 때는
+터미널에서 `Ctrl+C`. 포트가 이미 쓰이면 `--port 8080` 처럼 바꾸세요.
+
+브라우저에서 순서대로:
+
+1. **영상 선택** — mp4/mov/webm 등. **업로드가 아닙니다**: 이 컴퓨터에서 바로
+   재생·분석하므로 용량 제한이 없고 영상은 이 브라우저를 벗어나지 않습니다
+2. **자석 클릭** → HSV 범위 자동 설정, 슬라이더로 미세조정
+   (초록색으로 칠해진 부분이 "자석으로 인식된 픽셀")
+3. **코일 위치 클릭**, **길이 보정 드래그**(아는 길이를 mm로 입력),
+   **LED 영역 드래그**, 촬영한 카메라의 **fps** 확인
+4. **아두이노 전압 파일 선택** — 영상과 별개로 따로 선택합니다
+5. **추적 + 분석 실행** → 브라우저가 영상을 끝까지 훑어 좌표를 뽑고(진행률
+   표시), 그 결과만 서버로 보내 그래프 2장 + 진단 그래프, CSV 다운로드
+
+세그멘테이션이 잘 안 될 때는 ⑤ **검색 영역**을 드래그해 자석이 지나가는
+구역만 남기면 배경의 비슷한 색을 무시할 수 있습니다.
+
 ## 1분 체험 (장비 없이)
 
-합성 데이터셋(영상 + 전압 로그 + 정답값)을 만들어서 전체 흐름을 그대로 돌려봅니다.
-첫 명령이 `example-data/pendulum.mp4` 와 `voltage.csv` 를 만듭니다.
+명령줄용 합성 데이터셋(영상 + 전압 로그 + 정답값)을 만들어서 CLI 흐름을
+그대로 돌려봅니다. 첫 명령이 `example-data/pendulum.mp4` 와 `voltage.csv` 를
+만듭니다. (이 둘을 웹 UI에 그대로 올려도 됩니다.)
 
 ```bash
 python3 -m faradaycv.synthetic example-data
@@ -63,9 +96,9 @@ python3 -m faradaycv analyze example-data/pendulum.mp4 \
 
 ```
 LED onset       : frame 6 -> t0 = 0.200 s
-max speed       : 0.676 m/s at t = 1.724 s
+max speed       : 0.677 m/s at t = 1.724 s
 max |emf|       : 20.61 mV at t = 1.534 s
-peak separation : -0.190 s (speed at the emf peak: 0.455 m/s)
+peak separation : -0.190 s (speed at the emf peak: 0.453 m/s)
 ```
 
 최대 속도 시각과 최대 전압 시각이 **0.19초 어긋나 있고**, 전압이 최대인 순간의
@@ -75,31 +108,47 @@ peak separation : -0.190 s (speed at the emf peak: 0.455 m/s)
 > 스윙이 여러 번 들어간 기록에서는 최대 속도 지점이 여러 개라서, 비교에 쓰는
 > "최대 속도 시각"은 **전압 정점에 가장 가까운** 최대 속도 지점으로 잡습니다.
 
-## 웹 UI (코딩 없이)
+## 배포 (웹 서비스로 올리기)
+
+서버는 영상을 다루지 않으므로 (numpy/scipy/matplotlib/flask 뿐, OpenCV·ffmpeg
+없음) 아주 작은 인스턴스로 충분합니다.
+
+**Render** — 이 저장소를 GitHub에 두고, Render에서 "New +" → "Blueprint" →
+이 저장소 선택. `render.yaml` 이 자동으로 인식됩니다 (root: `faraday-cv/`).
+무료 플랜으로 충분합니다.
+
+**Fly.io**:
 
 ```bash
-python3 -m faradaycv serve
+cd faraday-cv
+fly launch   # Dockerfile과 fly.toml을 찾아 그대로 씁니다
+fly deploy
 ```
 
-터미널에 뜨는 주소(기본 `http://127.0.0.1:8000`)를 브라우저에서 열고, 끌 때는
-터미널에서 `Ctrl+C`. 포트가 이미 쓰이면 `--port 8080` 처럼 바꾸세요.
+**Docker (직접 아무 곳에나)**:
 
-브라우저에서 순서대로:
+```bash
+cd faraday-cv
+docker build -t faraday-cv .
+docker run -p 8000:8000 faraday-cv
+```
 
-1. **영상 업로드** — mp4/mov/avi 등. 용량이 큰 영상은 업로드 대신
-   **파일 경로**(`/Users/이름/Movies/swing.mp4`)를 입력해 바로 열 수 있습니다.
-   같은 컴퓨터에서 도는 도구라 복사 없이 원본을 그대로 읽습니다
-2. **자석 클릭** → HSV 범위 자동 설정, 슬라이더로 미세조정
-   (초록색으로 칠해진 부분이 "자석으로 인식된 픽셀")
-3. **코일 위치 클릭**, **길이 보정 드래그**(아는 길이를 mm로 입력),
-   **LED 영역 드래그**
-4. **아두이노 전압 파일 업로드** — 영상과 별개로 따로 올립니다
-5. **분석 실행** → 그래프 2장 + 진단 그래프, CSV 다운로드
+세 방법 모두 `FARADAYCV_LOCAL_MODE=0` 이 설정됩니다 — 서버가 영상을 대신
+디코딩해 주는 기능(로컬 전용, 아래 [영상 형식](#영상-형식) 참고)이 꺼지고,
+브라우저 추적 화면만 나옵니다. 다른 환경변수:
 
-세그멘테이션이 잘 안 될 때는 ⑤ **검색 영역**을 드래그해 자석이 지나가는
-구역만 남기면 배경의 비슷한 색을 무시할 수 있습니다.
+| 환경변수                        | 뜻                                                    | 기본값          |
+| ------------------------------- | ----------------------------------------------------- | --------------- |
+| `FARADAYCV_LOCAL_MODE`          | `0`이면 공개 배포 모드 (서버 영상 처리 기능 비활성화) | `1` (로컬)      |
+| `FARADAYCV_SESSION_TTL_MINUTES` | 실행 결과(그래프·CSV) 보관 시간. 지나면 자동 삭제     | `1440` (24시간) |
 
-## 명령줄
+작은 무료 인스턴스에 여러 사람이 몰릴 수 있으니 `FARADAYCV_SESSION_TTL_MINUTES`
+를 60 정도로 짧게 두는 것을 권합니다 (`render.yaml`/`fly.toml`에 이미 반영).
+
+## 명령줄 (CLI, 로컬 전용)
+
+CLI는 **서버가 아니라 OpenCV로 직접 영상을 디코딩**합니다 — 웹 UI의
+브라우저 추적과는 별개의, 스크립팅·일괄 처리용 경로입니다.
 
 ```bash
 python3 -m faradaycv info swing.mp4
@@ -169,32 +218,30 @@ python3 tools/serial_logger.py --port /dev/ttyACM0 --out voltage.csv --seconds 2
 
 ## 영상 형식
 
-- mp4·mov·avi·mkv 등을 그대로 올리면 됩니다.
-- **아이폰 영상(HEVC/H.265)** 은 OpenCV가 못 읽는 경우가 많습니다. 그럴 때는
-  같이 설치된 ffmpeg로 **H.264 고정 프레임레이트 사본을 자동 생성**해서
-  분석합니다. 첫 업로드 때 한 번만 시간이 걸리고(길이에 따라 수십 초),
-  변환본은 임시 폴더에 캐시되어 다음부터는 즉시 열립니다.
-- 변환은 **가변 프레임레이트(VFR)** 문제도 함께 해결합니다. 폰 카메라는 VFR로
-  녹화하는 경우가 많은데, 이 분석은 프레임 시각을 `프레임번호 / fps` 로 계산하므로
-  고정 프레임레이트여야 정확합니다. 가능하면 촬영 자체를 고정 fps로 하세요.
-- 직접 변환하고 싶으면:
+**웹 UI**는 브라우저가 재생할 수 있는 형식이면 뭐든 됩니다 — 요즘 크롬·엣지·
+사파리는 대부분 mp4(H.264/HEVC), webm(VP9/AV1)을 재생합니다. 브라우저가 못 여는
+파일이면 화면에 바로 오류가 뜨고, `ffmpeg -i 원본.mp4 -c:v libx264 -pix_fmt
+yuv420p -an swing.mp4` 로 재인코딩하면 대부분 해결됩니다.
 
-```bash
-ffmpeg -i 원본.mp4 -c:v libx264 -pix_fmt yuv420p -an swing.mp4
-```
+**CLI**(로컬, OpenCV 기반)는 이보다 관대합니다 — mp4·mov·avi·mkv 등을 그대로
+넣으면 되고, OpenCV가 못 읽는 코덱(아이폰 HEVC 등)은 같이 설치된 ffmpeg로
+**H.264 고정 프레임레이트 사본을 자동 생성**해서 분석합니다 (`doctor` 명령으로
+원인 진단, 자세한 내용은 이전 버전 기록 참고). 이 자동 변환은 **로컬 서버
+모드(`local_mode`)의 CLI/구버전 웹 경로에만 있고, 공개 배포한 웹 UI(브라우저
+추적)에는 없습니다** — 영상이 서버로 가지 않으니 서버가 대신 변환해 줄 수도
+없습니다.
 
-- 영상이 안 열리면 **원인부터 확인**하세요. 코덱 문제인지, 파일이 잘린 것인지,
-  아예 동영상이 아닌지를 구분해 알려줍니다:
+영상이 안 열리면 **원인부터 확인**하세요:
 
 ```bash
 python3 -m faradaycv doctor /경로/swing.mp4
 ```
 
 `moov atom is missing` 이 나오면 코덱이 아니라 **파일이 불완전한 것**입니다.
-MP4는 재생에 필요한 색인(`moov`)이 파일 끝에 있어서, 복사나 업로드가 중간에
-끊기면 크기는 그럴듯한데 아무 프로그램도 못 여는 파일이 됩니다.
-아이폰이라면 사진 앱에서 **파일 > 내보내기 > 원본 내보내기**로 다시 뽑고,
-iCloud 다운로드가 끝날 때까지 기다린 뒤 바이트 크기를 비교하세요.
+MP4는 재생에 필요한 색인(`moov`)이 파일 끝에 있어서, 복사가 중간에 끊기면
+크기는 그럴듯한데 아무 프로그램도 못 여는 파일이 됩니다. 아이폰이라면 사진
+앱에서 **파일 > 내보내기 > 원본 내보내기**로 다시 뽑고, iCloud 다운로드가
+끝날 때까지 기다린 뒤 바이트 크기를 비교하세요.
 
 ## 실험 세팅 요령
 
@@ -207,6 +254,11 @@ iCloud 다운로드가 끝날 때까지 기다린 뒤 바이트 크기를 비교
   핵심 장치입니다.
 - 길이 보정: 화면 안에 **자(ruler)나 길이를 아는 물체**를 함께 찍고,
   웹 UI에서 그 구간을 드래그한 뒤 실제 길이(mm)를 입력하세요.
+- 촬영한 카메라의 **실제 fps**를 웹 UI의 "추적 fps"에 맞추세요. 폰 카메라는
+  촬영 중 프레임레이트가 미세하게 흔들릴 수 있는데(가변 프레임레이트), 이
+  분석은 브라우저가 각 프레임에서 실제로 보고하는 시각을 쓰므로 대체로
+  괜찮지만, 지정한 fps가 실제와 크게 다르면 프레임을 건너뛰거나 중복 추적할
+  수 있습니다.
 
 ## 잘 안 될 때
 
@@ -214,14 +266,16 @@ iCloud 다운로드가 끝날 때까지 기다린 뒤 바이트 크기를 비교
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | 검출률이 낮다 (`detected in only …%`)         | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                                  |
 | 덩어리가 여러 개 잡힌다                       | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                                       |
-| `LED never crossed the on-threshold`          | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`로 수동 지정                           |
+| `LED never crossed the on-threshold`          | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`/"수동 t₀"로 지정                      |
 | `LED region is bright in every frame`         | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요              |
 | `records do not overlap`                      | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                             |
 | ℰ/v가 회전점에서 폭발한다                     | 정상입니다(v→0). `--v-min`을 올리세요                                                           |
 | 속도 곡선이 톱니처럼 떨린다                   | `--smooth` 값을 키우세요(프레임 수, 홀수)                                                       |
-| `cannot read that video`                      | `python3 -m faradaycv doctor 파일` 로 원인을 먼저 확인하세요                                    |
+| 웹 UI에서 영상이 안 열린다                    | 브라우저가 그 코덱을 재생 못 하는 경우입니다. H.264(mp4)로 다시 내보내 보세요                   |
+| 웹 UI에서 추적이 오래 걸린다                  | 영상이 길거나 해상도가 큰 경우입니다. 검색 영역(ROI)을 지정하면 빨라집니다                      |
+| "경로로 열기"/서버 업로드가 안 보인다         | 공개 배포(`FARADAYCV_LOCAL_MODE=0`)에서는 의도적으로 꺼져 있습니다. 브라우저 추적을 쓰세요      |
+| `cannot read that video`                      | `python3 -m faradaycv doctor 파일` 로 원인을 먼저 확인하세요 (CLI/로컬 전용 기능)               |
 | `moov atom is missing` / `Invalid data found` | 코덱이 아니라 **잘린 파일**입니다. 원본을 다시 내보내거나 다시 복사하세요                       |
-| `the upload was cut short`                    | 업로드가 끊겼습니다. 다시 시도하거나 **경로로 열기**를 쓰세요                                   |
 | `zsh: command not found: pip`                 | macOS에는 `pip` 명령이 없습니다. `python3 -m pip` 를 쓰세요                                     |
 | `No module named 'flask'` / `'cv2'`           | 설치를 건너뛴 경우입니다. 위 **설치** 절차(venv + `python3 -m pip install -r requirements.txt`) |
 | `No module named faradaycv`                   | `faraday-cv` 폴더 밖에서 실행한 경우입니다                                                      |
@@ -231,28 +285,46 @@ iCloud 다운로드가 끝날 때까지 기다린 뒤 바이트 크기를 비교
 ## 개발
 
 ```bash
+python3 -m pip install -r requirements.txt   # CLI/로컬 웹 전체 기능 (OpenCV 포함)
 python3 -m pytest -q
+node tests/browser/cv.test.mjs               # 브라우저 컬러 세그멘테이션 단위 테스트
 ruff check faradaycv tests
 ruff format --check faradaycv tests
 ```
 
-합성 데이터의 정답값과 대조하는 79개 테스트입니다.
+Python 쪽은 합성 데이터의 정답값과 대조하는 테스트입니다. 매번 영상을 실제로
+인코딩·디코딩해서 돌리고, OpenCV 추적 오차 1.5 px 이내·속도 오차 0.05 m/s 이내·
+LED 프레임 정확 일치·전압 정점 20 ms 이내, 그리고 "속도 최대 ≠ 전압 최대"라는
+논문의 결론까지 검증합니다. `requirements-web.txt`만 설치한(OpenCV 없는) 환경에서
+분석 파이프라인이 그대로 동작하는지도 확인합니다.
 
-테스트는 매번 영상을 실제로 인코딩·디코딩해서 돌립니다. 추적 오차 1.5 px 이내,
-속도 오차 0.05 m/s 이내, LED 프레임 정확 일치, 전압 정점 20 ms 이내 —
-그리고 "속도 최대 ≠ 전압 최대"라는 논문의 결론까지 검증합니다.
+브라우저 쪽(`static/cv.js`)은 Node로 바로 도는 순수 단위 테스트로 검증하고,
+Playwright가 설치돼 있으면(`pip install playwright && playwright install
+chromium`) `tests/browser/test_e2e.py` 가 실제 (헤드리스) 브라우저로 페이지를
+끝까지 조작해 서버 결과까지 확인합니다 — 없으면 조용히 건너뜁니다. 이 테스트
+환경의 헤드리스 크로미움에는 H.264 디코더가 없어서 대안 코덱으로 우회하는데,
+그 과정에서 측정된 추적 정밀도 관련 사항은 `tests/browser/README.md` 에
+정직하게 적어 두었습니다 — 실사용 브라우저(H.264 지원)에서는 해당하지 않을
+가능성이 높은, 이 테스트 환경 고유의 한계입니다.
 
 ```
 faradaycv/
-  segmentation.py   HSV 색 범위, 마스크 정리, 덩어리 선택, 클릭→색 추정
-  video.py          영상 1회 디코딩으로 자석 추적 + LED 신호 동시 취득
+  track.py          영상 소스와 무관한 추적 결과 모델 (cv2 불필요)
+  segmentation.py   HSV 색 범위, 마스크 정리, 덩어리 선택, 클릭→색 추정 (OpenCV, 지연 임포트)
+  video.py          OpenCV로 영상 디코딩 + 추적 (CLI/로컬 전용)
+  decode.py         재생 안 되는 영상 진단, 필요 시 H.264로 자동 변환 (CLI/로컬 전용)
   voltage.py        아두이노 CSV 파서 (단위·구분자·헤더 자동 판별)
   analysis.py       픽셀→미터 보정, 평활·미분, 시간축 동기화, ℰ/v
   plots.py          논문용 Fig. 2 / Fig. 3 / 진단 그래프
-  pipeline.py       전체 실행과 파일 출력
-  webapp.py         노코드 웹 UI (Flask)
-  synthetic.py      합성 데이터 생성기 (데모 + 테스트 정답값)
+  pipeline.py       추적 결과 → 분석 → 파일 출력 (OpenCV 불필요)
+  webapp.py         웹 백엔드: /api/analyze(경량, 공개 배포용) + 서버측 처리(로컬 전용)
+  synthetic.py      합성 데이터 생성기 (데모 + 테스트 정답값, H.264로 인코딩)
   cli.py            명령줄
+static/
+  cv.js             브라우저 컬러 세그멘테이션 (segmentation.py의 JS 버전)
+  tracker.js         <video> 프레임 순회 + 전체 추적 루프
+  app.js, style.css, index.html   웹 UI
 arduino/faraday_logger/   ADS1115 + LED 마커 스케치
 tools/serial_logger.py    시리얼 → CSV 저장
+wsgi.py, Dockerfile, render.yaml, fly.toml   배포용
 ```

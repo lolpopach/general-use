@@ -1,19 +1,25 @@
-/* faraday-cv - no-code UI for colour-segmentation video analysis. */
+/* faraday-cv - no-code UI for colour-segmentation video analysis.
+ *
+ * The video is decoded and segmented entirely in this page (see cv.js and
+ * tracker.js); only the resulting track and the separately-chosen voltage
+ * file are ever sent to the server, at "run" time.
+ */
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  sid: null,
-  info: null,
-  frame: 0,
+  tracker: null,
+  duration: 0,
+  frame: 0, // seconds
   mode: "magnet",
   color: { h_lo: 0, h_hi: 10, s_lo: 80, s_hi: 255, v_lo: 60, v_hi: 255 },
   segment: { blur: 5, open_ksize: 3, close_ksize: 7, min_area: 40, roi: null },
   coil: null,
   ledRoi: null,
   scaleLine: null,
-  hasVoltage: false,
-  baseImage: null,
+  voltageFile: null,
+  sid: null,
+  lastPainted: null,
   drag: null,
 };
 
@@ -53,10 +59,8 @@ function canvasPoint(event) {
   };
 }
 
-function draw() {
-  if (!state.baseImage) return;
-  ctx.drawImage(state.baseImage, 0, 0, canvas.width, canvas.height);
-
+/** Redraw the ROI/LED/scale/coil markers on top of whatever is on canvas now. */
+function drawMarkers() {
   if (state.segment.roi) {
     const [x, y, w, h] = state.segment.roi;
     ctx.setLineDash([6, 4]);
@@ -97,14 +101,10 @@ function draw() {
   }
 }
 
-function loadImage(blobOrUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src =
-      blobOrUrl instanceof Blob ? URL.createObjectURL(blobOrUrl) : blobOrUrl;
-  });
+/** Repaint the cached frame/mask (no video seek) then the markers on top. */
+function redrawFromCache() {
+  if (state.lastPainted) ctx.putImageData(state.lastPainted, 0, 0);
+  drawMarkers();
 }
 
 let refreshTimer = null;
@@ -114,49 +114,38 @@ function scheduleRefresh() {
 }
 
 async function refreshFrame() {
-  if (!state.sid) return;
+  if (!state.tracker) return;
   try {
-    let blob;
+    const img = await state.tracker.frameImageData(state.frame); // paints the raw frame
     if ($("show-mask").checked) {
-      blob = await api(`/api/session/${state.sid}/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          index: state.frame,
-          color: state.color,
-          segment: state.segment,
-        }),
-      });
-      updateSegStats();
+      const { mask, blobs, blob } = window.faradayCV.segmentFrame(
+        img,
+        state.color,
+        state.segment,
+        null,
+      );
+      window.faradayCV.overlayPreview(ctx, img, mask, blob);
+      updateSegStats(blobs, blob, mask);
     } else {
-      blob = await api(`/api/session/${state.sid}/frame?index=${state.frame}`);
       $("seg-stats").textContent = "";
     }
-    state.baseImage = await loadImage(blob);
-    draw();
+    state.lastPainted = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    drawMarkers();
   } catch (err) {
     setHint(`미리보기 실패: ${err.message}`, true);
   }
 }
 
-async function updateSegStats() {
-  const info = await api(`/api/session/${state.sid}/preview`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      index: state.frame,
-      color: state.color,
-      segment: state.segment,
-      stats: true,
-    }),
-  });
-  const centroid = info.centroid
-    ? `중심 (${info.centroid[0].toFixed(1)}, ${info.centroid[1].toFixed(1)})`
+function updateSegStats(blobs, blob, mask) {
+  let on = 0;
+  for (let i = 0; i < mask.length; i++) if (mask[i]) on++;
+  const centroid = blob
+    ? `중심 (${blob.cx.toFixed(1)}, ${blob.cy.toFixed(1)})`
     : "검출 없음";
   $("seg-stats").textContent =
-    `덩어리 ${info.blobs}개 · 면적 ${info.area}px · ${centroid} · ` +
-    `화면의 ${(info.coverage * 100).toFixed(2)}%`;
-  if (info.blobs > 1) {
+    `덩어리 ${blobs.length}개 · 면적 ${blob ? blob.area : 0}px · ${centroid} · ` +
+    `화면의 ${((on / mask.length) * 100).toFixed(2)}%`;
+  if (blobs.length > 1) {
     $("seg-stats").textContent += " · 덩어리가 여러 개면 범위를 좁히세요";
   }
 }
@@ -164,14 +153,14 @@ async function updateSegStats() {
 /* ------------------------------------------------------------ interaction */
 
 canvas.addEventListener("pointerdown", (event) => {
-  if (!state.sid) return;
+  if (!state.tracker) return;
   const p = canvasPoint(event);
   if (state.mode === "magnet") {
     pickColor(p);
   } else if (state.mode === "coil") {
     state.coil = [p.x, p.y];
     $("coil").value = `${p.x},${p.y}`;
-    draw();
+    redrawFromCache();
   } else {
     state.drag = { start: p, current: p };
     canvas.setPointerCapture(event.pointerId);
@@ -181,7 +170,7 @@ canvas.addEventListener("pointerdown", (event) => {
 canvas.addEventListener("pointermove", (event) => {
   if (!state.drag) return;
   state.drag.current = canvasPoint(event);
-  draw();
+  redrawFromCache();
   const { start, current } = state.drag;
   ctx.setLineDash([5, 3]);
   ctx.strokeStyle = "#111";
@@ -227,17 +216,17 @@ canvas.addEventListener("pointerup", () => {
     state.segment.roi = rect;
     scheduleRefresh();
   }
-  draw();
+  redrawFromCache();
 });
 
 async function pickColor(p) {
   try {
-    const out = await api(`/api/session/${state.sid}/pick`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ index: state.frame, x: p.x, y: p.y }),
+    state.color = await state.tracker.pickColorAt(state.frame, p.x, p.y, {
+      radius: 6,
+      hTol: 10,
+      sTol: 70,
+      vTol: 80,
     });
-    state.color = out.color;
     syncSliders();
     setHint("색 범위를 잡았습니다. 슬라이더로 다듬어 보세요.");
     scheduleRefresh();
@@ -280,92 +269,49 @@ function setHint(text, isError = false) {
   el.className = isError ? "hint error" : "hint";
 }
 
-/* ---------------------------------------------------------------- uploads */
+/* ------------------------------------------------------------------ video */
+
+function updateFpsStep() {
+  const fps = parseFloat($("track-fps").value) || 30;
+  $("frame-slider").step = (1 / fps).toFixed(4);
+}
 
 $("video-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
-  setHint("영상 업로드 중... (변환이 필요한 형식이면 몇 분 걸릴 수 있습니다)");
-  const body = new FormData();
-  body.append("file", file);
-  body.append("size", file.size);
+  setHint("영상을 불러오는 중...");
+  if (state.tracker) state.tracker.dispose();
+  const tracker = new VideoTracker(file, canvas);
   try {
-    const out = await api("/api/video", { method: "POST", body });
-    await adoptVideo(out, file.name);
-  } catch (err) {
-    setHint(`업로드 실패: ${err.message}`, true);
-  }
-});
-
-async function adoptVideo(out, name) {
-  state.sid = out.session;
-  state.info = out.video;
-  canvas.width = out.video.width;
-  canvas.height = out.video.height;
-  $("frame-slider").max = Math.max(0, out.video.frame_count - 1);
-  $("frame-slider").value = 0;
-  state.frame = 0;
-  $("video-info").innerHTML = infoRows({
-    파일: name,
-    크기: `${out.video.width} × ${out.video.height}`,
-    fps: out.video.fps.toFixed(2),
-    프레임: out.video.frame_count,
-    길이: `${out.video.duration_s.toFixed(2)} s`,
-  });
-  setHint(
-    out.video.note
-      ? `${out.video.note} — 이제 자석을 클릭해 색을 지정하세요.`
-      : "자석을 클릭해 색을 지정하세요.",
-  );
-  updateRunButton();
-  await refreshFrame();
-}
-
-$("open-path").addEventListener("click", async () => {
-  const path = $("video-path").value.trim();
-  if (!path) return;
-  setHint("파일 여는 중...");
-  try {
-    const out = await api("/api/video/path", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path }),
+    const meta = await tracker.load();
+    state.tracker = tracker;
+    state.duration = meta.duration;
+    state.frame = 0;
+    updateFpsStep();
+    $("frame-slider").max = meta.duration;
+    $("frame-slider").value = 0;
+    $("frame-label").textContent = "t = 0.00 s";
+    $("video-info").innerHTML = infoRows({
+      파일: file.name,
+      크기: `${meta.width} × ${meta.height}`,
+      길이: `${meta.duration.toFixed(2)} s`,
     });
-    await adoptVideo(out, path.split("/").pop());
-  } catch (err) {
-    setHint(`열기 실패: ${err.message}`, true);
-  }
-});
-
-$("voltage-file").addEventListener("change", async (event) => {
-  const file = event.target.files[0];
-  if (!file || !state.sid) {
-    if (!state.sid) setHint("영상을 먼저 업로드하세요.", true);
-    return;
-  }
-  const body = new FormData();
-  body.append("file", file);
-  body.append("voltage_unit", $("voltage-unit").value);
-  try {
-    const out = await api(`/api/session/${state.sid}/voltage`, {
-      method: "POST",
-      body,
-    });
-    const v = out.voltage;
-    state.hasVoltage = true;
-    $("voltage-info").innerHTML = infoRows({
-      파일: v.filename,
-      샘플: v.samples,
-      샘플레이트: `${v.sample_rate_hz.toFixed(1)} Hz`,
-      구간: `${v.t_start_s.toFixed(2)} ~ ${v.t_end_s.toFixed(2)} s`,
-      범위: `${v.v_min_mV.toFixed(2)} ~ ${v.v_max_mV.toFixed(2)} mV`,
-      "읽은 단위": `${v.time_unit} / ${v.voltage_unit}`,
-    });
+    setHint("자석을 클릭해 색을 지정하세요.");
     updateRunButton();
+    await refreshFrame();
   } catch (err) {
-    $("voltage-info").innerHTML = "";
-    setHint(`전압 파일 실패: ${err.message}`, true);
+    state.tracker = null;
+    setHint(`영상 열기 실패: ${err.message}`, true);
   }
+});
+
+$("voltage-file").addEventListener("change", (event) => {
+  const file = event.target.files[0] || null;
+  state.voltageFile = file;
+  $("voltage-info").innerHTML = file
+    ? infoRows({ 파일: file.name, 크기: `${(file.size / 1024).toFixed(1)} KB` })
+    : "";
+  updateRunButton();
 });
 
 function infoRows(obj) {
@@ -375,7 +321,7 @@ function infoRows(obj) {
 }
 
 function updateRunButton() {
-  $("run").disabled = !(state.sid && state.hasVoltage);
+  $("run").disabled = !(state.tracker && state.voltageFile);
 }
 
 /* -------------------------------------------------------------- analysis */
@@ -389,58 +335,68 @@ $("run").addEventListener("click", async () => {
     const parts = text.split(",").map((v) => parseFloat(v.trim()));
     return parts.length === 4 && parts.every(Number.isFinite) ? parts : null;
   };
-  const body = {
-    color: state.color,
-    segment: state.segment,
+  const ledRoi = parseRect($("led-roi").value);
+  const fps = parseFloat($("track-fps").value) || 30;
+
+  $("run").disabled = true;
+  $("progress").hidden = false;
+  $("progress").firstElementChild.style.width = "0%";
+  $("status").textContent = "브라우저에서 자석을 추적하는 중...";
+
+  let track;
+  try {
+    track = await state.tracker.trackAll({
+      color: state.color,
+      segment: state.segment,
+      ledRoi,
+      fps,
+      onProgress: (done, total) => {
+        const pct = (100 * done) / Math.max(total, 1);
+        $("progress").firstElementChild.style.width = `${pct.toFixed(0)}%`;
+        $("status").textContent = `추적 중... ${done}/${total} 프레임`;
+      },
+    });
+  } catch (err) {
+    $("status").innerHTML =
+      `<span class="error">추적 실패: ${err.message}</span>`;
+    updateRunButton();
+    return;
+  }
+
+  $("progress").firstElementChild.style.width = "100%";
+  $("status").textContent = "서버에서 물리량을 계산하는 중...";
+
+  const config = {
     calibration: {
       mm_per_px: parseFloat($("mm-per-px").value) || 1,
       coil_px: parsePair($("coil").value),
       smooth_window: parseInt($("smooth").value, 10) || 0,
     },
-    led_roi: parseRect($("led-roi").value),
+    led_roi: ledRoi,
     t0_video: $("t0-video").value || null,
     voltage_unit: $("voltage-unit").value,
     baseline_seconds: parseFloat($("baseline").value) || 0,
     v_min: $("v-min").value || null,
     title: $("title").value || null,
   };
-  $("run").disabled = true;
-  $("progress").hidden = false;
-  $("status").textContent = "분석 중...";
+
+  const body = new FormData();
+  body.append("track", JSON.stringify(track));
+  body.append("config", JSON.stringify(config));
+  if (state.voltageFile) body.append("voltage", state.voltageFile);
+
   try {
-    await api(`/api/session/${state.sid}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    poll();
+    const out = await api("/api/analyze", { method: "POST", body });
+    state.sid = out.session;
+    $("status").textContent = "완료";
+    showResults(out.result);
   } catch (err) {
     $("status").innerHTML =
-      `<span class="error">실행 실패: ${err.message}</span>`;
+      `<span class="error">분석 실패: ${err.message}</span>`;
+  } finally {
     updateRunButton();
   }
 });
-
-async function poll() {
-  try {
-    const out = await api(`/api/session/${state.sid}`);
-    $("progress").firstElementChild.style.width = `${out.progress}%`;
-    $("status").textContent = out.message;
-    if (out.state === "running") {
-      setTimeout(poll, 500);
-      return;
-    }
-    updateRunButton();
-    if (out.state === "error") {
-      $("status").innerHTML = `<span class="error">${out.message}</span>`;
-      return;
-    }
-    showResults(out.result);
-  } catch (err) {
-    $("status").innerHTML = `<span class="error">${err.message}</span>`;
-    updateRunButton();
-  }
-}
 
 const STAT_LABELS = {
   t_max_speed_s: ["최대 속도 시각", "s"],
@@ -523,12 +479,13 @@ $("clear-roi").addEventListener("click", () => {
 });
 
 $("frame-slider").addEventListener("input", (event) => {
-  state.frame = parseInt(event.target.value, 10);
-  $("frame-label").textContent = `프레임 ${state.frame}`;
+  state.frame = parseFloat(event.target.value);
+  $("frame-label").textContent = `t = ${state.frame.toFixed(2)} s`;
   scheduleRefresh();
 });
 
 $("show-mask").addEventListener("change", scheduleRefresh);
+$("track-fps").addEventListener("change", updateFpsStep);
 
 for (const [id, key] of [
   ["min-area", "min_area"],
@@ -551,12 +508,3 @@ $("scale-length").addEventListener("change", () => {
 });
 
 buildSliders();
-
-/* The path field only makes sense when the server is this machine. */
-api("/api/config")
-  .then((cfg) => {
-    if (!cfg.local_mode) {
-      $("path-block").hidden = true;
-    }
-  })
-  .catch(() => {});

@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from .analysis import Synced, summarize  # noqa: E402
-from .video import Track  # noqa: E402
+from .track import Track  # noqa: E402
 
 #: Fonts that carry Hangul glyphs, best first.  Matplotlib only falls back
 #: glyph by glyph when ``font.family`` is an explicit list of families (the

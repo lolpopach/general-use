@@ -14,9 +14,11 @@
     <header>
       <h1>faraday-cv</h1>
       <p>
-        진자 자석 영상을 <strong>컬러 세그멘테이션</strong>으로 추적하고, 따로
-        올린 아두이노 전압 로그와 <strong>LED 타이밍 신호</strong>로 동기화해서
-        논문용 그래프를 만듭니다.
+        진자 자석 영상을 <strong>브라우저 안에서</strong>
+        컬러 세그멘테이션으로 추적하고, 따로 올린 아두이노 전압 로그와
+        <strong>LED 타이밍 신호</strong>로 동기화해서 논문용 그래프를 만듭니다.
+        <strong>영상은 서버로 전송되지 않습니다</strong> — 추적은 이 페이지
+        안에서, 물리량 계산과 그래프만 서버에서 처리합니다.
       </p>
     </header>
 
@@ -33,35 +35,31 @@
         </div>
         <canvas id="canvas" width="640" height="360"></canvas>
         <div class="frame-bar">
-          <input id="frame-slider" type="range" min="0" max="0" value="0" />
-          <span id="frame-label">프레임 0</span>
+          <input
+            id="frame-slider"
+            type="range"
+            min="0"
+            max="100"
+            value="0"
+            step="0.1"
+          />
+          <span id="frame-label">t = 0.00 s</span>
           <label
             ><input id="show-mask" type="checkbox" checked /> 마스크
             미리보기</label
           >
         </div>
-        <p id="hint" class="hint">먼저 영상을 업로드하세요.</p>
+        <p id="hint" class="hint">먼저 영상을 선택하세요.</p>
       </section>
 
       <section class="panel">
         <details open>
-          <summary>1. 영상 업로드</summary>
+          <summary>1. 영상 선택</summary>
           <input id="video-file" type="file" accept="video/*" />
-          <div id="path-block">
-            <p class="tip">
-              용량이 큰 영상은 업로드 대신 <strong>파일 경로</strong>로 바로 열
-              수 있습니다 (같은 컴퓨터의 파일만). Finder에서 파일을 끌어다 아래
-              칸에 놓으면 경로가 입력됩니다.
-            </p>
-            <div class="path-row">
-              <input
-                id="video-path"
-                type="text"
-                placeholder="/Users/이름/Movies/swing.mp4"
-              />
-              <button id="open-path">경로로 열기</button>
-            </div>
-          </div>
+          <p class="tip">
+            이 컴퓨터에서 바로 재생·분석합니다. 업로드가 아니라서 용량 제한이
+            없고, 영상 내용은 이 브라우저를 벗어나지 않습니다.
+          </p>
           <dl id="video-info" class="info"></dl>
         </details>
 
@@ -120,11 +118,20 @@
                 step="0.001"
                 placeholder="LED 사용"
             /></label>
+            <label
+              >추적 fps
+              <input id="track-fps" type="number" value="30" min="1" step="1"
+            /></label>
           </div>
+          <p class="tip">
+            “추적 fps”는 영상을 몇 프레임/초 간격으로 훑을지입니다. 촬영한
+            카메라의 실제 fps에 맞추세요 (모르면 30 그대로 두어도 대체로
+            괜찮습니다).
+          </p>
         </details>
 
         <details open>
-          <summary>4. 아두이노 전압 파일 (따로 업로드)</summary>
+          <summary>4. 아두이노 전압 파일 (따로 선택)</summary>
           <input id="voltage-file" type="file" accept=".csv,.txt,.tsv,.log" />
           <div class="grid2">
             <label
@@ -156,7 +163,7 @@
               step="0.01"
               placeholder="자동(최대속도의 8%)"
           /></label>
-          <button id="run" class="primary" disabled>분석 실행</button>
+          <button id="run" class="primary" disabled>추적 + 분석 실행</button>
           <div id="progress" class="progress" hidden><div></div></div>
           <p id="status" class="stats"></p>
         </details>
@@ -171,6 +178,8 @@
       </section>
     </main>
 
+    <script src="/static/cv.js"></script>
+    <script src="/static/tracker.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

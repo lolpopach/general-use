@@ -1,0 +1,19 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+#
+# New Render service -> "Blueprint" -> point at this repo (root: faraday-cv/).
+# Free tier: 512 MB RAM is plenty since the server never decodes video.
+services:
+  - type: web
+    name: faraday-cv
+    runtime: python
+    plan: free
+    rootDir: faraday-cv
+    buildCommand: pip install -r requirements-web.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60 wsgi:app
+    envVars:
+      - key: FARADAYCV_LOCAL_MODE
+        value: "0"
+      - key: FARADAYCV_SESSION_TTL_MINUTES
+        value: "60"
+      - key: PYTHON_VERSION
+        value: "3.12.5"

@@ -18,13 +18,13 @@ from .plots import (
     save_figure,
 )
 from .segmentation import ColorRange, SegmentConfig
-from .video import Track, led_onset_frame, track_video
+from .track import Track, led_onset_frame
 from .voltage import VoltageLog, load_voltage_csv
 
 
 @dataclass
 class AnalysisConfig:
-    video: str
+    video: str | None = None
     voltage: str | None = None
     color: ColorRange = ColorRange(0, 10)
     segment: SegmentConfig = field(default_factory=SegmentConfig)
@@ -67,7 +67,7 @@ class AnalysisConfig:
     def from_dict(cls, data: dict) -> "AnalysisConfig":
         led_roi = data.get("led_roi")
         return cls(
-            video=data["video"],
+            video=data.get("video"),
             voltage=data.get("voltage"),
             color=ColorRange.from_dict(data.get("color", {"h_lo": 0, "h_hi": 10})),
             segment=SegmentConfig.from_dict(data.get("segment", {})),
@@ -119,7 +119,9 @@ def run_analysis(
     cfg: AnalysisConfig,
     progress: Callable[[int, int], None] | None = None,
 ) -> AnalysisResult:
-    """Track the magnet, read the log, synchronise, and derive E/v."""
+    """Track the magnet in the video, then analyse it."""
+    from .video import track_video  # OpenCV is needed only on this path
+
     track = track_video(
         cfg.video,
         cfg.color,
@@ -131,6 +133,19 @@ def run_analysis(
         end_frame=cfg.end_frame,
         progress=progress,
     )
+    return analyse_track(track, cfg)
+
+
+def analyse_track(track: Track, cfg: AnalysisConfig) -> AnalysisResult:
+    """Read the log, synchronise, derive E/v -- given a track from anywhere.
+
+    The track may come from :func:`track_video` here, or from the browser,
+    which segments the video on the student's own machine and sends only the
+    centroids.  Either way the physics below is the same, and it reads each
+    frame's time from the track rather than assuming ``index / fps`` -- the
+    browser reports the true presentation timestamps, which is what makes
+    variable-frame-rate phone video safe to analyse.
+    """
     motion = build_motion(track, cfg.calibration)
     notes = list(track.notes)
     if track.info is not None and track.info.note:
@@ -154,11 +169,10 @@ def run_analysis(
                     "region covers the LED, or set the video t=0 by hand"
                 )
 
-    fps = track.info.fps if track.info else 30.0
     if cfg.t0_video is not None:
         t0_video = float(cfg.t0_video)
     elif led_frame is not None:
-        t0_video = (cfg.start_frame + led_frame) / fps
+        t0_video = float(track.t[led_frame])
     else:
         t0_video = 0.0
         if cfg.led_roi is None:

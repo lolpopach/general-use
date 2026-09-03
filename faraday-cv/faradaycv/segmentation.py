@@ -15,7 +15,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
-import cv2
 import numpy as np
 
 H_MAX = 179
@@ -70,7 +69,15 @@ class ColorRange:
         return cls(*[int(float(p)) for p in parts])
 
     def mask(self, hsv: np.ndarray) -> np.ndarray:
-        """Binary mask (0/255) of the pixels inside this box."""
+        """Binary mask (0/255) of the pixels inside this box.
+
+        Needs OpenCV, imported here rather than at module level so that the
+        rest of this module -- ``ColorRange``, ``SegmentConfig``, parsing --
+        stays usable on a server with no OpenCV installed (the browser does
+        the actual segmentation there; the server never calls this method).
+        """
+        import cv2
+
         lo_sv = (self.s_lo, self.v_lo)
         hi_sv = (self.s_hi, self.v_hi)
         if not self.wraps:
@@ -127,6 +134,8 @@ class SegmentConfig:
 
 def to_hsv(frame_bgr: np.ndarray, blur: int = 5) -> np.ndarray:
     """Blur (odd kernel, 0 disables) then convert to HSV."""
+    import cv2
+
     work = frame_bgr
     if blur and blur >= 3:
         k = blur if blur % 2 == 1 else blur + 1
@@ -137,6 +146,8 @@ def to_hsv(frame_bgr: np.ndarray, blur: int = 5) -> np.ndarray:
 def _apply_roi(mask: np.ndarray, roi: tuple[int, int, int, int] | None) -> np.ndarray:
     if roi is None:
         return mask
+    import cv2
+
     x, y, w, h = (int(v) for v in roi)
     keep = np.zeros_like(mask)
     x0, y0 = max(0, x), max(0, y)
@@ -160,6 +171,8 @@ def segment(
 
 def clean_mask(mask: np.ndarray, cfg: SegmentConfig) -> np.ndarray:
     """Opening removes speckle, closing fills the specular highlight."""
+    import cv2
+
     if cfg.open_ksize >= 2:
         k = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (cfg.open_ksize, cfg.open_ksize)
@@ -175,6 +188,8 @@ def clean_mask(mask: np.ndarray, cfg: SegmentConfig) -> np.ndarray:
 
 def find_blobs(mask: np.ndarray, min_area: int = 40) -> list[Blob]:
     """Connected components above ``min_area``, largest first."""
+    import cv2
+
     count, _labels, stats, centroids = cv2.connectedComponentsWithStats(
         (mask > 0).astype(np.uint8), connectivity=8
     )
@@ -251,7 +266,7 @@ def sample_color_range(
     identifies the magnet); saturation and value get loose ones (they swing
     with the lab lighting and with the shadow on the far side of the swing).
     """
-    hsv = to_hsv(frame_bgr, blur)
+    hsv = to_hsv(frame_bgr, blur)  # imports cv2 itself
     h, w = hsv.shape[:2]
     x0, x1 = max(0, x - radius), min(w, x + radius + 1)
     y0, y1 = max(0, y - radius), min(h, y + radius + 1)
@@ -281,6 +296,8 @@ def overlay_mask(
     alpha: float = 0.45,
 ) -> np.ndarray:
     """Tint the segmented pixels and mark the tracked centroid (for preview)."""
+    import cv2
+
     out = frame_bgr.copy()
     tint = np.zeros_like(out)
     tint[:] = color

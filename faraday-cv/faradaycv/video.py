@@ -1,13 +1,16 @@
-"""Video pass: segment the magnet and read the LED timing marker.
+"""Decoding video with OpenCV: the local half of the tracker.
 
 The video is decoded exactly once.  Every frame yields two things: the
 centroid of the colour blob (the magnet) and the mean brightness inside the
 LED region of interest (the sync marker the Arduino lights up at t = 0).
+
+The browser does the same job in ``static/tracker.js`` when faraday-cv is
+used as a hosted service; both produce the :class:`~faradaycv.track.Track`
+defined next door.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -15,6 +18,7 @@ import cv2
 import numpy as np
 
 from .decode import VideoOpenError, readable_video, try_open
+from .track import Track, VideoInfo, led_onset_frame
 from .segmentation import (
     Blob,
     ColorRange,
@@ -24,49 +28,6 @@ from .segmentation import (
     select_blob,
     to_hsv,
 )
-
-
-@dataclass
-class VideoInfo:
-    path: str
-    fps: float
-    frame_count: int
-    width: int
-    height: int
-    note: str | None = None  # set when the file had to be converted first
-
-    def to_dict(self) -> dict:
-        return {
-            "path": self.path,
-            "fps": self.fps,
-            "frame_count": self.frame_count,
-            "width": self.width,
-            "height": self.height,
-            "duration_s": self.frame_count / self.fps if self.fps else 0.0,
-            "note": self.note,
-        }
-
-
-@dataclass
-class Track:
-    """Raw per-frame tracking output, in pixels and video time."""
-
-    frame: np.ndarray
-    t: np.ndarray
-    x: np.ndarray
-    y: np.ndarray
-    area: np.ndarray
-    found: np.ndarray
-    led: np.ndarray | None = None
-    info: VideoInfo | None = None
-    notes: list[str] = field(default_factory=list)
-
-    def __len__(self) -> int:
-        return int(self.frame.size)
-
-    @property
-    def detection_rate(self) -> float:
-        return float(self.found.mean()) if len(self) else 0.0
 
 
 def open_video(path: str | Path) -> tuple[cv2.VideoCapture, VideoInfo]:
@@ -208,41 +169,12 @@ def _led_level(hsv: np.ndarray, roi: tuple[int, int, int, int]) -> float:
     return float(hsv[y0:y1, x0:x1, 2].mean())  # V channel = brightness
 
 
-def led_onset_frame(
-    led: np.ndarray,
-    threshold: float | None = None,
-    min_rise: float = 15.0,
-) -> tuple[int | None, float]:
-    """First frame in which the marker LED reads as lit.
-
-    With no explicit threshold the trace is split half-way between its dark and
-    bright levels, and the split is rejected if those levels differ by less
-    than ``min_rise`` grey levels -- which is what a trace with no LED in it
-    looks like.  Dark and bright come from the extremes of a 3-frame median of
-    the trace, not from percentiles: the LED is typically lit for all but the
-    first few frames, so any percentile wide enough to be robust would sit on
-    the lit side of the step.
-    """
-    values = np.asarray(led, dtype=float)
-    finite = values[np.isfinite(values)]
-    if finite.size == 0:
-        return None, float("nan")
-    if threshold is None:
-        smoothed = _median3(finite)
-        lo, hi = float(np.min(smoothed)), float(np.max(smoothed))
-        if hi - lo < min_rise:
-            return None, float("nan")
-        threshold = lo + 0.5 * (hi - lo)
-    idx = np.flatnonzero(values > threshold)
-    if idx.size == 0:
-        return None, float(threshold)
-    return int(idx[0]), float(threshold)
-
-
-def _median3(values: np.ndarray) -> np.ndarray:
-    """3-point median filter, so one bad frame cannot set the LED levels."""
-    if values.size < 3:
-        return values
-    stacked = np.vstack([values[:-2], values[1:-1], values[2:]])
-    inner = np.median(stacked, axis=0)
-    return np.concatenate([values[:1], inner, values[-1:]])
+__all__ = [
+    "Track",
+    "VideoInfo",
+    "led_onset_frame",
+    "open_video",
+    "probe",
+    "read_frame",
+    "track_video",
+]

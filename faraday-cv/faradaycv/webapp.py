@@ -1,41 +1,35 @@
-"""The no-code web UI.
+"""The web backend.
 
-Upload the swing video, click the magnet to pick its colour, click the coil,
-drag the LED box, upload the Arduino log *separately*, press run.  Out come
-the two figures and the CSV tables.
+The primary path needs no OpenCV at all: a video dropped into the page is
+decoded and colour-segmented entirely in the browser (see static/tracker.js
+and static/cv.js), and only the resulting track -- a centroid and an LED
+brightness per frame -- crosses the network.  ``/api/analyze`` turns that
+track plus the separately-uploaded Arduino log into the figures and tables.
 
-It is a local single-user tool: sessions are directories under a work folder,
-and one background thread runs the analysis while the page polls for status.
+A second, OpenCV-backed path still exists for a local, single-user install
+(the original design): upload or point at a video and let the server decode
+and segment it.  That path is gated behind ``local_mode``, because letting
+anyone on the internet hand this server arbitrary video to transcode and
+decode is exactly the load a public deployment cannot carry.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
 import threading
-import traceback
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import cv2
-import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from werkzeug.utils import secure_filename
 
 from .analysis import Calibration
-from .pipeline import AnalysisConfig, export_results, run_analysis
-from .segmentation import (
-    ColorRange,
-    SegmentConfig,
-    find_blobs,
-    overlay_mask,
-    sample_color_range,
-    segment,
-    select_blob,
-)
-from .video import probe, read_frame
+from .pipeline import AnalysisConfig, analyse_track, export_results
+from .track import Track
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm", ".mpg", ".mpeg"}
 RESULT_FILES = {
@@ -47,6 +41,11 @@ RESULT_FILES = {
     "fig3_emf_over_velocity.png",
     "diagnostics.png",
 }
+
+#: Track JSON + a CSV log is at most a few MB; this is not a video upload.
+ANALYZE_MAX_BYTES = 64 * 1024**2
+#: A local server decoding its own videos may reasonably be handed a big file.
+LOCAL_MAX_BYTES = 2 * 1024**3
 
 
 @dataclass
@@ -81,20 +80,35 @@ class Session:
 def create_app(
     workdir: str | Path | None = None,
     local_mode: bool | None = None,
+    session_ttl_minutes: float | None = None,
 ) -> Flask:
     """Build the app.
 
-    ``local_mode`` enables conveniences that are only safe when the server and
-    the browser are the same machine -- above all opening a video by its path
-    on disk.  Served to anyone else, that endpoint would read arbitrary files,
-    so it is refused unless local mode is on.  It defaults to on, and to off
-    when FARADAYCV_LOCAL_MODE is set to 0/false/no.
+    ``local_mode`` enables the OpenCV-backed, server-side video pipeline --
+    opening a file by its path on disk, or uploading a video for the server
+    to decode.  That is only sensible when the server and the browser are the
+    same machine: served to anyone else it is both an arbitrary-file-read
+    risk (the path endpoint) and the exact heavy per-request video decoding a
+    public deployment cannot afford.  It defaults to on, and to off when
+    FARADAYCV_LOCAL_MODE is set to 0/false/no -- which is what ``serve
+    --public`` does.
+
+    ``session_ttl_minutes`` bounds how long a run's output directory (a few
+    figures and CSVs) survives before a background sweep deletes it -- every
+    request from every visitor otherwise accumulates on disk forever, which a
+    small always-on free-tier instance cannot absorb.  Defaults to 24 hours,
+    or FARADAYCV_SESSION_TTL_MINUTES; 0 disables the sweep.
     """
     if local_mode is None:
         env = os.environ.get("FARADAYCV_LOCAL_MODE", "1").strip().lower()
         local_mode = env not in {"0", "false", "no", "off"}
+    if session_ttl_minutes is None:
+        session_ttl_minutes = float(
+            os.environ.get("FARADAYCV_SESSION_TTL_MINUTES", 1440)
+        )
     base = Path(workdir) if workdir else Path(tempfile.gettempdir()) / "faraday-cv"
     base.mkdir(parents=True, exist_ok=True)
+    _start_cleanup_sweep(base, session_ttl_minutes)
     here = Path(__file__).resolve().parent.parent
 
     app = Flask(
@@ -102,7 +116,9 @@ def create_app(
         static_folder=str(here / "static"),
         template_folder=str(here / "templates"),
     )
-    app.config["MAX_CONTENT_LENGTH"] = 2 * 1024**3  # 2 GB videos are plausible
+    app.config["MAX_CONTENT_LENGTH"] = (
+        LOCAL_MAX_BYTES if local_mode else ANALYZE_MAX_BYTES
+    )
     sessions: dict[str, Session] = {}
     lock = threading.Lock()
 
@@ -113,6 +129,18 @@ def create_app(
             raise KeyError(sid)
         return session
 
+    def register(session: Session) -> None:
+        with lock:
+            sessions[session.sid] = session
+
+    def require_local() -> None:
+        if not local_mode:
+            raise LocalOnlyError(
+                "faraday-cv is running in public mode, where the server does not "
+                "decode video -- this feature needs a local install "
+                "(python3 -m faradaycv serve)"
+            )
+
     @app.errorhandler(KeyError)
     def _unknown_session(exc):  # pragma: no cover - trivial
         return jsonify({"error": f"unknown session {exc}"}), 404
@@ -120,6 +148,10 @@ def create_app(
     @app.errorhandler(ValueError)
     def _bad_request(exc):
         return jsonify({"error": str(exc)}), 400
+
+    @app.errorhandler(LocalOnlyError)
+    def _local_only(exc):
+        return jsonify({"error": str(exc)}), 403
 
     @app.get("/")
     def index():
@@ -129,10 +161,83 @@ def create_app(
     def static_files(name):  # pragma: no cover - served by Flask in practice
         return send_from_directory(str(here / "static"), name)
 
-    # ---------------------------------------------------------------- uploads
+    @app.get("/api/config")
+    def client_config():
+        """What the page is allowed to offer, decided by the server."""
+        return jsonify({"local_mode": bool(local_mode)})
+
+    # ------------------------------------------------------- browser tracking
+
+    @app.post("/api/analyze")
+    def analyze():
+        """Turn a browser-measured track (+ the Arduino log) into results.
+
+        No video crosses this request -- ``track`` is the JSON produced by
+        static/tracker.js, already reduced to a centroid and an LED level per
+        frame.  This is the endpoint a public deployment is built around.
+        """
+        track_raw = request.form.get("track")
+        if not track_raw:
+            raise ValueError("no track data in the request")
+        try:
+            track_data = json.loads(track_raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"malformed track data: {exc}") from exc
+        try:
+            track = Track.from_dict(track_data)
+        except Exception as exc:
+            raise ValueError(f"cannot use this track: {exc}") from exc
+
+        try:
+            config_data = json.loads(request.form.get("config") or "{}")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"malformed config: {exc}") from exc
+
+        sid = uuid.uuid4().hex[:12]
+        root = base / sid
+        root.mkdir(parents=True, exist_ok=True)
+
+        voltage_path = None
+        voltage_file = request.files.get("voltage")
+        if voltage_file and voltage_file.filename:
+            voltage_path = root / secure_filename(voltage_file.filename)
+            voltage_file.save(voltage_path)
+
+        cfg = _track_config(config_data, voltage_path)
+        try:
+            result = analyse_track(track, cfg)
+        except Exception as exc:
+            shutil.rmtree(root, ignore_errors=True)
+            raise ValueError(str(exc)) from exc
+
+        written = export_results(result, root / "out")
+        session = Session(
+            sid=sid,
+            root=root,
+            info=track.info.to_dict() if track.info else {},
+            state="done",
+            progress=100.0,
+            message="done",
+            result={
+                "stats": result.stats,
+                "notes": result.notes,
+                "led_frame": result.led_frame,
+                "t0_video_s": result.t0_video,
+                "detection_rate": result.track.detection_rate,
+                "files": {k: Path(v).name for k, v in written.items()},
+                "voltage": result.log.to_dict() if result.log else None,
+            },
+        )
+        register(session)
+        return jsonify(session.public())
+
+    # ------------------------------------------------ local video (advanced)
 
     @app.post("/api/video")
     def upload_video():
+        require_local()
+        from .video import probe
+
         file = request.files.get("file")
         if file is None or not file.filename:
             raise ValueError("no video file in the request")
@@ -161,26 +266,16 @@ def create_app(
                 "instead of uploading it (see the field under the file picker)."
             )
 
-        session = _start_session(sid, root, target)
-        with lock:
-            sessions[sid] = session
+        session = _start_session(sid, root, target, probe)
+        register(session)
         return jsonify(session.public())
-
-    @app.get("/api/config")
-    def client_config():
-        """What the page is allowed to offer, decided by the server."""
-        return jsonify({"local_mode": bool(local_mode)})
 
     @app.post("/api/video/path")
     def open_video_path():
         """Analyse a file where it already is -- no copy, no upload wait."""
-        if not local_mode:
-            return jsonify(
-                {
-                    "error": "opening files by path is only available when "
-                    "faraday-cv runs on your own machine; upload the video instead"
-                }
-            ), 403
+        require_local()
+        from .video import probe
+
         data = request.get_json(force=True)
         raw = (data.get("path") or "").strip().strip("'\"")
         if not raw:
@@ -198,14 +293,14 @@ def create_app(
         sid = uuid.uuid4().hex[:12]
         root = base / sid
         root.mkdir(parents=True, exist_ok=True)
-        session = _start_session(sid, root, target, cleanup=root)
-        with lock:
-            sessions[sid] = session
+        session = _start_session(sid, root, target, probe, cleanup=root)
+        register(session)
         return jsonify(session.public())
 
     @app.post("/api/session/<sid>/voltage")
     def upload_voltage(sid: str):
         """The Arduino log is uploaded on its own, after the video."""
+        require_local()
         session = get_session(sid)
         file = request.files.get("file")
         if file is None or not file.filename:
@@ -225,14 +320,11 @@ def create_app(
         session.voltage_info["filename"] = target.name
         return jsonify(session.public())
 
-    # ------------------------------------------------------------ inspection
-
-    @app.get("/api/session/<sid>")
-    def session_state(sid: str):
-        return jsonify(get_session(sid).public())
-
     @app.get("/api/session/<sid>/frame")
     def frame(sid: str):
+        require_local()
+        from .video import read_frame
+
         session = get_session(sid)
         index = int(request.args.get("index", 0))
         img = read_frame(session.video, index)
@@ -241,6 +333,10 @@ def create_app(
     @app.post("/api/session/<sid>/pick")
     def pick(sid: str):
         """Suggest an HSV box from a click on the magnet."""
+        require_local()
+        from .segmentation import sample_color_range
+        from .video import read_frame
+
         session = get_session(sid)
         data = request.get_json(force=True)
         img = read_frame(session.video, int(data.get("index", 0)))
@@ -258,6 +354,17 @@ def create_app(
     @app.post("/api/session/<sid>/preview")
     def preview(sid: str):
         """Return the frame with the current segmentation drawn on top."""
+        require_local()
+        from .segmentation import (
+            ColorRange,
+            SegmentConfig,
+            find_blobs,
+            overlay_mask,
+            segment,
+            select_blob,
+        )
+        from .video import read_frame
+
         session = get_session(sid)
         data = request.get_json(force=True)
         img = read_frame(session.video, int(data.get("index", 0)))
@@ -277,15 +384,16 @@ def create_app(
             )
         return _jpeg(overlay_mask(img, mask, best))
 
-    # --------------------------------------------------------------- running
-
     @app.post("/api/session/<sid>/run")
     def run(sid: str):
+        require_local()
+        from .segmentation import ColorRange, SegmentConfig
+
         session = get_session(sid)
         if session.state == "running":
             raise ValueError("this session is already running")
         data = request.get_json(force=True)
-        cfg = _config_from_request(session, data)
+        cfg = _local_video_config(session, data, ColorRange, SegmentConfig)
         session.state = "running"
         session.progress = 0.0
         session.message = "tracking the magnet..."
@@ -296,6 +404,12 @@ def create_app(
         )
         thread.start()
         return jsonify(session.public())
+
+    # ------------------------------------------------------------ inspection
+
+    @app.get("/api/session/<sid>")
+    def session_state(sid: str):
+        return jsonify(get_session(sid).public())
 
     @app.get("/api/session/<sid>/file/<name>")
     def result_file(sid: str, name: str):
@@ -310,8 +424,104 @@ def create_app(
     return app
 
 
+def _sweep_once(base: Path, cutoff: float) -> list[Path]:
+    """Delete session directories last modified before ``cutoff`` (epoch seconds)."""
+    removed = []
+    try:
+        children = list(base.iterdir())
+    except OSError:
+        return removed
+    for child in children:
+        try:
+            if child.is_dir() and child.stat().st_mtime < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
+                removed.append(child)
+        except OSError:
+            pass
+    return removed
+
+
+def _start_cleanup_sweep(base: Path, ttl_minutes: float) -> None:
+    """Run :func:`_sweep_once` forever in the background, roughly every ttl/4."""
+    if ttl_minutes <= 0:
+        return
+    interval = min(1800.0, max(60.0, ttl_minutes * 60 / 4))
+
+    def loop() -> None:
+        import time
+
+        while True:
+            time.sleep(interval)
+            _sweep_once(base, time.time() - ttl_minutes * 60)
+
+    threading.Thread(target=loop, daemon=True, name="faraday-cv-cleanup").start()
+
+
+class LocalOnlyError(Exception):
+    """Raised when a local-only feature is hit in a public deployment."""
+
+
+def _track_config(data: dict, voltage_path: Path | None) -> AnalysisConfig:
+    """Build an AnalysisConfig for a track that already has its centroids."""
+    calib = _calibration_from_request(data.get("calibration", {}))
+    led_roi = data.get("led_roi")
+    return AnalysisConfig(
+        voltage=str(voltage_path) if voltage_path else None,
+        calibration=calib,
+        led_roi=tuple(int(v) for v in led_roi) if led_roi else None,
+        led_threshold=_opt_float(data.get("led_threshold")),
+        t0_video=_opt_float(data.get("t0_video")),
+        t0_voltage=float(data.get("t0_voltage") or 0.0),
+        voltage_unit=data.get("voltage_unit", "auto"),
+        baseline_seconds=float(data.get("baseline_seconds", 0.2)),
+        v_min=_opt_float(data.get("v_min")),
+        title=data.get("title") or None,
+    )
+
+
+def _local_video_config(
+    session: Session, data: dict, ColorRange, SegmentConfig
+) -> AnalysisConfig:
+    if session.video is None:
+        raise ValueError("this session has no video")
+    calib = _calibration_from_request(data.get("calibration", {}))
+    led_roi = data.get("led_roi")
+    return AnalysisConfig(
+        video=str(session.video),
+        voltage=str(session.voltage) if session.voltage else None,
+        color=ColorRange.from_dict(data.get("color", {})),
+        segment=SegmentConfig.from_dict(data.get("segment", {})),
+        calibration=calib,
+        led_roi=tuple(int(v) for v in led_roi) if led_roi else None,
+        led_threshold=_opt_float(data.get("led_threshold")),
+        t0_video=_opt_float(data.get("t0_video")),
+        t0_voltage=float(data.get("t0_voltage") or 0.0),
+        voltage_unit=data.get("voltage_unit", "auto"),
+        baseline_seconds=float(data.get("baseline_seconds", 0.2)),
+        v_min=_opt_float(data.get("v_min")),
+        fps_override=_opt_float(data.get("fps_override")),
+        max_jump_px=_opt_float(data.get("max_jump_px")),
+        start_frame=int(data.get("start_frame") or 0),
+        end_frame=int(data["end_frame"]) if data.get("end_frame") else None,
+        title=data.get("title") or None,
+    )
+
+
+def _calibration_from_request(calib_data: dict) -> Calibration:
+    calib_data = dict(calib_data)
+    scale = calib_data.pop("scale_line", None)
+    calib = Calibration.from_dict(calib_data)
+    if scale and scale.get("length_mm"):
+        calib.mm_per_px = Calibration.scale_from_line(
+            (float(scale["x0"]), float(scale["y0"])),
+            (float(scale["x1"]), float(scale["y1"])),
+            float(scale["length_mm"]),
+        )
+    return calib
+
+
 def _start_session(
-    sid: str, root: Path, video: Path, cleanup: Path | None = None
+    sid: str, root: Path, video: Path, probe, cleanup: Path | None = None
 ) -> Session:
     """Probe the video (converting it if need be) and build the session."""
     session = Session(sid=sid, root=root, video=video)
@@ -324,6 +534,10 @@ def _start_session(
 
 
 def _run_job(session: Session, cfg: AnalysisConfig) -> None:
+    import traceback
+
+    from .pipeline import run_analysis
+
     def progress(done: int, total: int) -> None:
         session.progress = 100.0 * done / max(total, 1)
 
@@ -349,47 +563,15 @@ def _run_job(session: Session, cfg: AnalysisConfig) -> None:
         (session.root / "error.log").write_text(traceback.format_exc())
 
 
-def _config_from_request(session: Session, data: dict) -> AnalysisConfig:
-    if session.video is None:
-        raise ValueError("this session has no video")
-    calib_data = dict(data.get("calibration", {}))
-    scale = calib_data.pop("scale_line", None)
-    calib = Calibration.from_dict(calib_data)
-    if scale and scale.get("length_mm"):
-        calib.mm_per_px = Calibration.scale_from_line(
-            (float(scale["x0"]), float(scale["y0"])),
-            (float(scale["x1"]), float(scale["y1"])),
-            float(scale["length_mm"]),
-        )
-    led_roi = data.get("led_roi")
-    return AnalysisConfig(
-        video=str(session.video),
-        voltage=str(session.voltage) if session.voltage else None,
-        color=ColorRange.from_dict(data.get("color", {})),
-        segment=SegmentConfig.from_dict(data.get("segment", {})),
-        calibration=calib,
-        led_roi=tuple(int(v) for v in led_roi) if led_roi else None,
-        led_threshold=_opt_float(data.get("led_threshold")),
-        t0_video=_opt_float(data.get("t0_video")),
-        t0_voltage=float(data.get("t0_voltage") or 0.0),
-        voltage_unit=data.get("voltage_unit", "auto"),
-        baseline_seconds=float(data.get("baseline_seconds", 0.2)),
-        v_min=_opt_float(data.get("v_min")),
-        fps_override=_opt_float(data.get("fps_override")),
-        max_jump_px=_opt_float(data.get("max_jump_px")),
-        start_frame=int(data.get("start_frame") or 0),
-        end_frame=int(data["end_frame"]) if data.get("end_frame") else None,
-        title=data.get("title") or None,
-    )
-
-
 def _opt_float(value) -> float | None:
     if value is None or value == "":
         return None
     return float(value)
 
 
-def _jpeg(image: np.ndarray):
+def _jpeg(image):
+    import cv2
+
     ok, buf = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
     if not ok:
         raise ValueError("failed to encode the frame")

@@ -167,7 +167,12 @@ def _render_frame(spec: SyntheticSpec, rng, x_px: float, y_px: float, led_on: bo
 
 
 def _open_writer(path: Path, spec: SyntheticSpec):
-    """mp4v where the build supports it, MJPG/AVI otherwise."""
+    """mp4v where the build supports it, MJPG/AVI otherwise.
+
+    Neither plays in a browser -- pip's OpenCV builds essentially never carry
+    a licensed H.264 encoder -- so this is only ever an intermediate file;
+    :func:`make_dataset` transcodes it to H.264 before handing back a path.
+    """
     for fourcc, suffix in (("mp4v", ".mp4"), ("MJPG", ".avi")):
         target = path.with_suffix(suffix)
         writer = cv2.VideoWriter(
@@ -196,7 +201,7 @@ def make_dataset(
     x_m, y_m = _position_m(spec, t_frames)
     x_px, y_px = _to_px(spec, x_m, y_m)
 
-    writer, video_path = _open_writer(outdir / "pendulum", spec)
+    writer, raw_path = _open_writer(outdir / "pendulum_raw", spec)
     try:
         for i in range(n_frames):
             writer.write(
@@ -206,6 +211,15 @@ def make_dataset(
             )
     finally:
         writer.release()
+
+    # Re-encode to H.264 so the same file plays in a browser (the point of a
+    # demo dataset) and decodes on any OpenCV build, not just the one that
+    # happened to write it.
+    from .decode import transcode_to_h264
+
+    video_path = outdir / "pendulum.mp4"
+    transcode_to_h264(raw_path, video_path)
+    raw_path.unlink(missing_ok=True)
 
     # The Arduino clock starts when the sketch lights the LED.
     t_led = spec.led_frame / spec.fps

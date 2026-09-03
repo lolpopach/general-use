@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+tests/
+example-data/
+out/
+*.mp4
+*.avi
+*.webm
+arduino/
+tools/
+docs/
+requirements.txt
+README.md
+.git/
