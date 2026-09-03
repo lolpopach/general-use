@@ -1,0 +1,12 @@
+# pip install -r requirements.txt
+numpy>=1.24
+opencv-python-headless>=4.8   # use opencv-python instead if you want cv2.imshow
+scipy>=1.10
+matplotlib>=3.7
+flask>=3.0
+
+# only for tools/serial_logger.py (reading the Arduino over USB)
+# pyserial>=3.5
+
+# only for the tests
+# pytest>=7.4
