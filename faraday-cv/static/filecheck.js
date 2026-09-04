@@ -98,7 +98,7 @@ async function hasMoovSignature(file) {
  */
 async function diagnoseVideoFile(file) {
   if (file.size === 0) {
-    return "파일 크기가 0바이트입니다. 다시 복사해서 올려보세요.";
+    return "this file is 0 bytes. Copy it across again and retry.";
   }
   let boxes;
   try {
@@ -115,10 +115,11 @@ async function diagnoseVideoFile(file) {
       return null; // the walk missed it -- a real codec/format issue, not this
     }
     return (
-      "이 파일은 재생에 필요한 색인(moov)이 없습니다 -- 옮기다가 끊긴, " +
-      "불완전한 파일입니다. 코덱 문제가 아니라서 다른 형식으로 바꿔도 " +
-      "소용없습니다. 원본을 다시 받아보세요 (에어드랍이나 아이클라우드 " +
-      "링크가 카카오톡·문자보다 안전합니다)."
+      "this file has no playback index (the moov atom) -- the copy was cut " +
+      "short, so the file is incomplete. It is not a codec problem, and " +
+      "converting it to another format will not help. Get a fresh copy of " +
+      "the original (AirDrop or an iCloud/Drive link is safer than sending " +
+      "it through a messaging app)."
     );
   }
   return null; // structurally fine -- a genuine codec/format issue

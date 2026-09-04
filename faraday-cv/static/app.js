@@ -31,12 +31,12 @@ const state = {
 };
 
 const SLIDERS = [
-  ["h_lo", "H 하한", 0, 179],
-  ["h_hi", "H 상한", 0, 179],
-  ["s_lo", "S 하한", 0, 255],
-  ["s_hi", "S 상한", 0, 255],
-  ["v_lo", "V 하한", 0, 255],
-  ["v_hi", "V 상한", 0, 255],
+  ["h_lo", "H min", 0, 179],
+  ["h_hi", "H max", 0, 179],
+  ["s_lo", "S min", 0, 255],
+  ["s_hi", "S max", 0, 255],
+  ["v_lo", "V min", 0, 255],
+  ["v_hi", "V max", 0, 255],
 ];
 
 /* ------------------------------------------------------------------ api */
@@ -139,7 +139,7 @@ async function refreshFrame() {
     state.lastPainted = ctx.getImageData(0, 0, canvas.width, canvas.height);
     drawMarkers();
   } catch (err) {
-    setHint(`미리보기 실패: ${err.message}`, true);
+    setHint(`Preview failed: ${err.message}`, true);
   }
 }
 
@@ -147,13 +147,13 @@ function updateSegStats(blobs, blob, mask) {
   let on = 0;
   for (let i = 0; i < mask.length; i++) if (mask[i]) on++;
   const centroid = blob
-    ? `중심 (${blob.cx.toFixed(1)}, ${blob.cy.toFixed(1)})`
-    : "검출 없음";
+    ? `centre (${blob.cx.toFixed(1)}, ${blob.cy.toFixed(1)})`
+    : "nothing detected";
   $("seg-stats").textContent =
-    `덩어리 ${blobs.length}개 · 면적 ${blob ? blob.area : 0}px · ${centroid} · ` +
-    `화면의 ${((on / mask.length) * 100).toFixed(2)}%`;
+    `${blobs.length} blob(s) · area ${blob ? blob.area : 0} px · ${centroid} · ` +
+    `${((on / mask.length) * 100).toFixed(2)}% of the frame`;
   if (blobs.length > 1) {
-    $("seg-stats").textContent += " · 덩어리가 여러 개면 범위를 좁히세요";
+    $("seg-stats").textContent += " · more than one blob: narrow the range";
   }
 }
 
@@ -214,7 +214,7 @@ canvas.addEventListener("pointerup", () => {
     const mm = parseFloat($("scale-length").value);
     if (px > 2 && mm > 0) {
       $("mm-per-px").value = (mm / px).toFixed(5);
-      setHint(`길이 보정: ${px.toFixed(1)} px = ${mm} mm`);
+      setHint(`Length scale: ${px.toFixed(1)} px = ${mm} mm`);
     }
   } else if (state.mode === "led") {
     state.ledRoi = rect;
@@ -235,10 +235,10 @@ async function pickColor(p) {
       vTol: 80,
     });
     syncSliders();
-    setHint("색 범위를 잡았습니다. 슬라이더로 다듬어 보세요.");
+    setHint("Colour range picked. Fine-tune it with the sliders.");
     scheduleRefresh();
   } catch (err) {
-    setHint(`색 선택 실패: ${err.message}`, true);
+    setHint(`Colour pick failed: ${err.message}`, true);
   }
 }
 
@@ -286,7 +286,7 @@ function updateFpsStep() {
 $("video-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
-  setHint("영상을 불러오는 중...");
+  setHint("Loading the video...");
   if (state.tracker) state.tracker.dispose();
   const tracker = new VideoTracker(file, canvas);
   try {
@@ -299,16 +299,16 @@ $("video-file").addEventListener("change", async (event) => {
     $("frame-slider").value = 0;
     $("frame-label").textContent = "t = 0.00 s";
     $("video-info").innerHTML = infoRows({
-      파일: file.name,
-      크기: `${meta.width} × ${meta.height}`,
-      길이: `${meta.duration.toFixed(2)} s`,
+      File: file.name,
+      Size: `${meta.width} × ${meta.height}`,
+      Duration: `${meta.duration.toFixed(2)} s`,
     });
-    setHint("자석을 클릭해 색을 지정하세요.");
+    setHint("Click the magnet to pick its colour.");
     updateRunButton();
     await refreshFrame();
   } catch (err) {
     state.tracker = null;
-    setHint(`영상 열기 실패: ${err.message}`, true);
+    setHint(`Could not open the video: ${err.message}`, true);
   }
 });
 
@@ -316,7 +316,7 @@ $("voltage-file").addEventListener("change", (event) => {
   const file = event.target.files[0] || null;
   state.voltageFile = file;
   $("voltage-info").innerHTML = file
-    ? infoRows({ 파일: file.name, 크기: `${(file.size / 1024).toFixed(1)} KB` })
+    ? infoRows({ File: file.name, Size: `${(file.size / 1024).toFixed(1)} KB` })
     : "";
   updateRunButton();
 });
@@ -348,7 +348,7 @@ $("run").addEventListener("click", async () => {
   $("run").disabled = true;
   $("progress").hidden = false;
   $("progress").firstElementChild.style.width = "0%";
-  $("status").textContent = "브라우저에서 자석을 추적하는 중...";
+  $("status").textContent = "Tracking the magnet in the browser...";
 
   let track;
   try {
@@ -360,18 +360,18 @@ $("run").addEventListener("click", async () => {
       onProgress: (done, total) => {
         const pct = (100 * done) / Math.max(total, 1);
         $("progress").firstElementChild.style.width = `${pct.toFixed(0)}%`;
-        $("status").textContent = `추적 중... ${done}/${total} 프레임`;
+        $("status").textContent = `Tracking... ${done}/${total} frames`;
       },
     });
   } catch (err) {
     $("status").innerHTML =
-      `<span class="error">추적 실패: ${err.message}</span>`;
+      `<span class="error">Tracking failed: ${err.message}</span>`;
     updateRunButton();
     return;
   }
 
   $("progress").firstElementChild.style.width = "100%";
-  $("status").textContent = "서버에서 물리량을 계산하는 중...";
+  $("status").textContent = "Computing the physics on the server...";
 
   const config = {
     calibration: {
@@ -395,26 +395,26 @@ $("run").addEventListener("click", async () => {
   try {
     const out = await api("/api/analyze", { method: "POST", body });
     state.sid = out.session;
-    $("status").textContent = "완료";
+    $("status").textContent = "Done";
     showResults(out.result);
   } catch (err) {
     $("status").innerHTML =
-      `<span class="error">분석 실패: ${err.message}</span>`;
+      `<span class="error">Analysis failed: ${err.message}</span>`;
   } finally {
     updateRunButton();
   }
 });
 
 const STAT_LABELS = {
-  t_max_speed_s: ["최대 속도 시각", "s"],
-  max_speed_m_s: ["최대 속도", "m/s"],
-  t_max_abs_voltage_s: ["최대 |전압| 시각", "s"],
-  max_abs_voltage_mV: ["최대 |전압|", "mV"],
-  speed_at_max_voltage_m_s: ["전압 최대일 때 속도", "m/s"],
-  voltage_at_max_speed_mV: ["속도 최대일 때 전압", "mV"],
-  peak_separation_s: ["두 정점의 시간차", "s"],
-  distance_at_max_voltage_mm: ["전압 최대일 때 거리", "mm"],
-  min_distance_mm: ["최소 거리", "mm"],
+  t_max_speed_s: ["Time of peak speed", "s"],
+  max_speed_m_s: ["Peak speed", "m/s"],
+  t_max_abs_voltage_s: ["Time of peak |voltage|", "s"],
+  max_abs_voltage_mV: ["Peak |voltage|", "mV"],
+  speed_at_max_voltage_m_s: ["Speed at peak voltage", "m/s"],
+  voltage_at_max_speed_mV: ["Voltage at peak speed", "mV"],
+  peak_separation_s: ["Separation between the two peaks", "s"],
+  distance_at_max_voltage_mm: ["Distance at peak voltage", "mm"],
+  min_distance_mm: ["Minimum distance", "mm"],
 };
 
 function showResults(result) {
@@ -426,11 +426,11 @@ function showResults(result) {
         `<tr><td>${label}</td><td>${result.stats[key].toFixed(3)} ${unit}</td></tr>`,
     );
   rows.push(
-    `<tr><td>검출률</td><td>${(result.detection_rate * 100).toFixed(1)} %</td></tr>`,
+    `<tr><td>Detection rate</td><td>${(result.detection_rate * 100).toFixed(1)} %</td></tr>`,
   );
   if (result.led_frame !== null && result.led_frame !== undefined) {
     rows.push(
-      `<tr><td>LED 점등 프레임</td><td>${result.led_frame} (t₀ = ${result.t0_video_s.toFixed(3)} s)</td></tr>`,
+      `<tr><td>LED-on frame</td><td>${result.led_frame} (t₀ = ${result.t0_video_s.toFixed(3)} s)</td></tr>`,
     );
   }
   $("stats-table").innerHTML = rows.join("");
@@ -470,11 +470,11 @@ document.querySelectorAll("button.mode").forEach((btn) => {
     btn.classList.add("active");
     state.mode = btn.dataset.mode;
     const hints = {
-      magnet: "자석 위를 클릭하면 HSV 범위가 잡힙니다.",
-      coil: "코일 중심을 클릭하세요.",
-      scale: "길이를 아는 구간을 드래그한 뒤 mm 값을 확인하세요.",
-      led: "LED가 보이는 사각형을 드래그하세요 (동기화용).",
-      roi: "자석이 지나가는 영역만 드래그로 지정하면 오검출이 줄어듭니다.",
+      magnet: "Click on the magnet to pick an HSV range.",
+      coil: "Click the centre of the coil.",
+      scale: "Drag across a length you know, then check the mm value.",
+      led: "Drag a rectangle over the LED (used for syncing).",
+      roi: "Drag around just the area the magnet passes through to cut false detections.",
     };
     setHint(hints[state.mode] || "");
   });

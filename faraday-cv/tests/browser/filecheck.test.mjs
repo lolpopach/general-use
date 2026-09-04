@@ -88,12 +88,16 @@ function fakeFile(buffer) {
   const message = await diagnoseVideoFile(file);
   assert(message !== null, "a missing moov must produce a specific message");
   assert(
-    message.includes("색인"),
+    message.includes("moov"),
     `message should name the missing index, got: ${message}`,
   );
   assert(
-    !message.includes("코덱이"),
-    "must not blame the codec when the file is just incomplete",
+    message.includes("not a codec problem"),
+    "must say outright that the codec is not to blame, so nobody re-encodes",
+  );
+  assert(
+    message.includes("fresh copy"),
+    `message should name the actual fix, got: ${message}`,
   );
 }
 
@@ -149,7 +153,7 @@ function fakeFile(buffer) {
 {
   const message = await diagnoseVideoFile(fakeFile(Buffer.alloc(0)));
   assert(
-    message !== null && message.includes("0바이트"),
+    message !== null && message.includes("0 bytes"),
     `empty file should say so, got: ${message}`,
   );
 }

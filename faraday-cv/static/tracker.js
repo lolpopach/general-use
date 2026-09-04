@@ -38,7 +38,7 @@ class VideoTracker {
     this.canvas.height = this.video.videoHeight;
     if (!this.canvas.width || !this.canvas.height) {
       throw new Error(
-        "이 파일에서 영상 트랙을 찾지 못했습니다 (영상 파일이 맞는지 확인하세요)",
+        "no video track was found in this file (check that it really is a video)",
       );
     }
     // Force a decode of the first frame -- some browsers leave the canvas
@@ -67,18 +67,18 @@ class VideoTracker {
     const specific = await window.faradayFileCheck
       .diagnoseVideoFile(this.file)
       .catch(() => null);
-    if (specific) return new Error(`영상을 열 수 없습니다: ${specific}`);
+    if (specific) return new Error(`Cannot open this video: ${specific}`);
 
     const code = this.video.error && this.video.error.code;
     const reasons = {
-      1: "재생이 중단되었습니다",
-      2: "네트워크 오류",
-      3: "디코딩할 수 없는 형식입니다 (코덱 문제일 수 있습니다)",
-      4: "브라우저가 지원하지 않는 형식입니다",
+      1: "playback was aborted",
+      2: "a network error",
+      3: "the format could not be decoded (possibly a codec problem)",
+      4: "a format this browser does not support",
     };
     return new Error(
-      `영상을 열 수 없습니다: ${reasons[code] || "알 수 없는 오류"}. ` +
-        "다른 형식(mp4/H.264 등)으로 다시 내보내 보세요.",
+      `Cannot open this video: ${reasons[code] || "an unknown error"}. ` +
+        "Try exporting it again in another format (mp4/H.264, for example).",
     );
   }
 

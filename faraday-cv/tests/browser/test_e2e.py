@@ -170,7 +170,9 @@ def test_browser_tracking_reproduces_the_papers_result(
 
             click_at(*truth["magnet_px"][0])
             page.wait_for_timeout(300)
-            assert "1개" in page.inner_text("#seg-stats"), page.inner_text("#seg-stats")
+            assert "1 blob(s)" in page.inner_text("#seg-stats"), page.inner_text(
+                "#seg-stats"
+            )
 
             page.click("button[data-mode='coil']")
             click_at(*truth["coil_px"])
@@ -187,12 +189,12 @@ def test_browser_tracking_reproduces_the_papers_result(
 
             page.click("#run")
             page.wait_for_function(
-                "document.querySelector('#status').innerText.includes('완료') || "
-                "document.querySelector('#status').innerText.includes('실패')",
+                "document.querySelector('#status').innerText.includes('Done') || "
+                "document.querySelector('#status').innerText.includes('failed')",
                 timeout=120000,
             )
             status = page.inner_text("#status")
-            assert "완료" in status, f"run did not finish cleanly: {status}"
+            assert "Done" in status, f"run did not finish cleanly: {status}"
 
             rows = page.inner_text("#stats-table")
             figures = page.evaluate(
@@ -208,7 +210,7 @@ def test_browser_tracking_reproduces_the_papers_result(
     # the voltage measurement, independent of tracking accuracy, must be exact
     assert f"{truth['max_abs_emf_mV']:.1f}" in rows or "20.6" in rows
     # the paper's point: the two peaks are measurably apart, not simultaneous
-    assert "두 정점의 시간차" in rows
+    assert "Separation between the two peaks" in rows
 
 
 @pytest.mark.skipif(
