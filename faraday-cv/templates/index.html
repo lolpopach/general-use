@@ -59,7 +59,16 @@
       <section class="panel">
         <details open>
           <summary>1. Video</summary>
-          <input id="video-file" type="file" accept="video/*" />
+          <div class="file-row">
+            <input
+              id="video-file"
+              class="file-input"
+              type="file"
+              accept="video/*"
+            />
+            <label class="file-button" for="video-file">Choose video</label>
+            <span id="video-file-name" class="file-name">No file chosen</span>
+          </div>
           <p class="tip">
             Played and analysed right here on this computer. Nothing is
             uploaded, so there is no size limit and the footage never leaves
@@ -149,7 +158,16 @@
 
         <details open>
           <summary>4. Arduino voltage file (chosen separately)</summary>
-          <input id="voltage-file" type="file" accept=".csv,.txt,.tsv,.log" />
+          <div class="file-row">
+            <input
+              id="voltage-file"
+              class="file-input"
+              type="file"
+              accept=".csv,.txt,.tsv,.log"
+            />
+            <label class="file-button" for="voltage-file">Choose CSV</label>
+            <span id="voltage-file-name" class="file-name">No file chosen</span>
+          </div>
           <div class="grid2">
             <label
               >Voltage unit

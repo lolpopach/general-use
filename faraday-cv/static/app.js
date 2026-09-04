@@ -283,9 +283,16 @@ function updateFpsStep() {
   $("frame-slider").step = (1 / fps).toFixed(4);
 }
 
+/** Echo the chosen file next to our own label-button, as the native file
+ * control used to do before we replaced it to control its wording. */
+function showFileName(spanId, file) {
+  $(spanId).textContent = file ? file.name : "No file chosen";
+}
+
 $("video-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
+  showFileName("video-file-name", file);
   setHint("Loading the video...");
   if (state.tracker) state.tracker.dispose();
   const tracker = new VideoTracker(file, canvas);
@@ -299,7 +306,6 @@ $("video-file").addEventListener("change", async (event) => {
     $("frame-slider").value = 0;
     $("frame-label").textContent = "t = 0.00 s";
     $("video-info").innerHTML = infoRows({
-      File: file.name,
       Size: `${meta.width} × ${meta.height}`,
       Duration: `${meta.duration.toFixed(2)} s`,
     });
@@ -315,8 +321,9 @@ $("video-file").addEventListener("change", async (event) => {
 $("voltage-file").addEventListener("change", (event) => {
   const file = event.target.files[0] || null;
   state.voltageFile = file;
+  showFileName("voltage-file-name", file);
   $("voltage-info").innerHTML = file
-    ? infoRows({ File: file.name, Size: `${(file.size / 1024).toFixed(1)} KB` })
+    ? infoRows({ Size: `${(file.size / 1024).toFixed(1)} KB` })
     : "";
   updateRunButton();
 });

@@ -185,6 +185,56 @@ select {
   color: var(--ink);
 }
 
+/* A file picker we can label ourselves.  The native control's button text
+   ("Choose File", or whatever the browser's own language calls it) cannot be
+   set from HTML, so the real input is visually hidden -- but still focusable
+   and operable -- behind a <label> that acts as the button. */
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.file-button {
+  display: inline-block;
+  font-size: 14px;
+  color: var(--ink);
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.file-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.file-input:focus-visible + .file-button {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.file-name {
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .sliders {
   display: grid;
   gap: 4px;
