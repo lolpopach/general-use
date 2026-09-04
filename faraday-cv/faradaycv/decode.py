@@ -251,6 +251,26 @@ class VideoDiagnosis:
         return "\n".join(lines)
 
 
+def _contains_moov_signature(
+    path: Path, head: int = 4 * 1024 * 1024, tail: int = 20 * 1024 * 1024
+) -> bool:
+    """Safety net for `_read_mp4_boxes`: a box declaring size 0 ("runs to the
+    end of the file") makes the sequential walk jump straight to EOF, but some
+    real-world muxers write that box mid-file and still append a real `moov`
+    after it, which the walk then never sees. Rather than trust the walk
+    alone, look for the literal `moov` bytes near the front ("fast start"
+    layouts) or the end (camera-native captures) before concluding it is
+    missing. A genuinely truncated copy has no `moov` bytes anywhere, so this
+    cannot mask a real truncation -- it only rescues files the walk mis-read.
+    """
+    size = path.stat().st_size
+    with path.open("rb") as fh:
+        if b"moov" in fh.read(min(size, head)):
+            return True
+        fh.seek(max(0, size - tail))
+        return b"moov" in fh.read(min(size, tail))
+
+
 def _read_mp4_boxes(path: Path, limit: int = 40) -> list[tuple[str, int]]:
     """Walk the top-level MP4/MOV boxes without decoding anything."""
     boxes: list[tuple[str, int]] = []
@@ -335,8 +355,11 @@ def diagnose(path: str | Path) -> VideoDiagnosis:
     ffmpeg_error = _ffmpeg_check(path)
 
     names = {name for name, _ in boxes}
+    moov_rescued = (
+        bool(names) and "moov" not in names and _contains_moov_signature(path)
+    )
     verdict, advice = _verdict(
-        size, container, names, backend is not None, ffmpeg_error
+        size, container, names, backend is not None, ffmpeg_error, moov_rescued
     )
     return VideoDiagnosis(
         path=path,
@@ -356,6 +379,7 @@ def _verdict(
     boxes: set[str],
     opencv_ok: bool,
     ffmpeg_error: str | None,
+    moov_rescued: bool = False,
 ) -> tuple[str, str]:
     if size == 0:
         return ("the file is empty", "copy the video across again")
@@ -372,7 +396,7 @@ def _verdict(
             "check that the file really is the video, and not a placeholder, an "
             "alias, or a partially downloaded iCloud item",
         )
-    if boxes and "moov" not in boxes:
+    if boxes and "moov" not in boxes and not moov_rescued:
         missing = "only " + ", ".join(sorted(boxes)) if boxes else "nothing"
         return (
             f"the MP4 index (moov atom) is missing -- the file holds {missing}, "

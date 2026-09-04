@@ -12,7 +12,12 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 global.window = {};
-new Function(fs.readFileSync(path.join(here, "..", "..", "static", "filecheck.js"), "utf8"))();
+new Function(
+  fs.readFileSync(
+    path.join(here, "..", "..", "static", "filecheck.js"),
+    "utf8",
+  ),
+)();
 const { readTopLevelBoxes, diagnoseVideoFile } = global.window.faradayFileCheck;
 
 let failures = 0;
@@ -39,14 +44,22 @@ function fakeFile(buffer) {
     size: buffer.length,
     slice(start, end) {
       const chunk = buffer.subarray(start, end);
-      return { arrayBuffer: async () => chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.length) };
+      return {
+        arrayBuffer: async () =>
+          chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.length),
+      };
     },
   };
 }
 
 // -- reads a healthy box sequence in order --
 {
-  const buf = Buffer.concat([box("ftyp", 16), box("free", 4), box("mdat", 1000), box("moov", 200)]);
+  const buf = Buffer.concat([
+    box("ftyp", 16),
+    box("free", 4),
+    box("mdat", 1000),
+    box("moov", 200),
+  ]);
   const boxes = await readTopLevelBoxes(fakeFile(buf));
   assert(
     boxes.join(",") === "ftyp,free,mdat,moov",
@@ -56,36 +69,89 @@ function fakeFile(buffer) {
 
 // -- a real transfer that stopped mid-copy: ftyp/free/mdat, no moov --
 {
-  const buf = Buffer.concat([box("ftyp", 16), box("free", 4), box("mdat", 176_000_000)]);
+  const buf = Buffer.concat([
+    box("ftyp", 16),
+    box("free", 4),
+    box("mdat", 176_000_000),
+  ]);
   const file = fakeFile(buf);
   const boxes = await readTopLevelBoxes(file);
-  assert(boxes.includes("ftyp") && boxes.includes("mdat"), "should see ftyp and mdat");
-  assert(!boxes.includes("moov"), "a cut-short file must not report a moov box");
+  assert(
+    boxes.includes("ftyp") && boxes.includes("mdat"),
+    "should see ftyp and mdat",
+  );
+  assert(
+    !boxes.includes("moov"),
+    "a cut-short file must not report a moov box",
+  );
 
   const message = await diagnoseVideoFile(file);
   assert(message !== null, "a missing moov must produce a specific message");
-  assert(message.includes("색인"), `message should name the missing index, got: ${message}`);
-  assert(!message.includes("코덱이"), "must not blame the codec when the file is just incomplete");
+  assert(
+    message.includes("색인"),
+    `message should name the missing index, got: ${message}`,
+  );
+  assert(
+    !message.includes("코덱이"),
+    "must not blame the codec when the file is just incomplete",
+  );
+}
+
+// -- a size-0 mdat mid-file makes the sequential walk jump to EOF, but a
+// real moov box physically follows it -- this must not be misreported as a
+// truncated file (the walk missing it is not the same as it being absent).
+{
+  const mdatWithZeroSize = Buffer.alloc(8 + 2000);
+  mdatWithZeroSize.writeUInt32BE(0, 0); // "runs to end of file"
+  mdatWithZeroSize.write("mdat", 4, "ascii");
+  const buf = Buffer.concat([
+    box("ftyp", 16),
+    mdatWithZeroSize,
+    box("moov", 300),
+  ]);
+  const file = fakeFile(buf);
+
+  const boxes = await readTopLevelBoxes(file);
+  assert(!boxes.includes("moov"), "the naive walk is expected to miss it here");
+
+  const message = await diagnoseVideoFile(file);
+  assert(
+    message === null,
+    `a moov physically present must not be reported as missing, got: ${message}`,
+  );
 }
 
 // -- a healthy file needs no special message (the generic one is fine) --
 {
-  const buf = Buffer.concat([box("ftyp", 16), box("mdat", 500), box("moov", 100)]);
+  const buf = Buffer.concat([
+    box("ftyp", 16),
+    box("mdat", 500),
+    box("moov", 100),
+  ]);
   const message = await diagnoseVideoFile(fakeFile(buf));
-  assert(message === null, `a complete file should get no special message, got: ${message}`);
+  assert(
+    message === null,
+    `a complete file should get no special message, got: ${message}`,
+  );
 }
 
 // -- something that is not MP4/MOV at all: no ftyp, so no opinion --
 {
   const buf = Buffer.from("not a video file, just some bytes here");
   const message = await diagnoseVideoFile(fakeFile(buf));
-  assert(message === null, "a non-MP4 file should defer to the generic browser message");
+  assert(
+    message === null,
+    "a non-MP4 file should defer to the generic browser message",
+  );
 }
 
 // -- an empty file is named as such, distinctly --
 {
   const message = await diagnoseVideoFile(fakeFile(Buffer.alloc(0)));
-  assert(message !== null && message.includes("0바이트"), `empty file should say so, got: ${message}`);
+  assert(
+    message !== null && message.includes("0바이트"),
+    `empty file should say so, got: ${message}`,
+  );
 }
 
 // -- a 64-bit box size (rare, but must not crash or misread) --
@@ -102,5 +168,7 @@ function fakeFile(buffer) {
   );
 }
 
-console.log(failures ? `\n${failures} FAILED` : "\nALL FILECHECK UNIT TESTS PASSED");
+console.log(
+  failures ? `\n${failures} FAILED` : "\nALL FILECHECK UNIT TESTS PASSED",
+);
 process.exit(failures ? 1 : 0);

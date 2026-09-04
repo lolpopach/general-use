@@ -11,6 +11,8 @@ import pytest
 
 from faradaycv.decode import (
     VideoOpenError,
+    _contains_moov_signature,
+    _read_mp4_boxes,
     available_backends,
     diagnose,
     ffmpeg_binary,
@@ -76,6 +78,36 @@ def test_a_part_copied_video_is_named_as_incomplete(dataset, tmp_path):
     assert not report.opencv_ok and not report.ffmpeg_ok
     assert "moov" in report.verdict and "incomplete" in report.verdict
     assert "re-copy" in report.advice or "re-export" in report.advice
+
+
+def test_moov_signature_rescues_what_the_box_walk_can_miss(tmp_path):
+    """A box declaring size 0 ("runs to EOF") makes the sequential box walk
+    jump straight past anything written after it. Real ffmpeg follows the
+    same rule and would fail on this exact layout too -- so this does not
+    reproduce a file a real decoder can open -- but it is still the layout a
+    walker desync of this shape produces, and `_verdict` must not take the
+    walk's word alone before blaming a missing index."""
+    ftyp = source_box(b"ftyp", b"isom" + b"\x00" * 12)
+    mdat = bytearray(8 + 2000)
+    mdat[4:8] = b"mdat"  # size left as 0: "runs to end of file"
+    moov = source_box(b"moov", b"\x00" * 300)
+    quirky = tmp_path / "quirky.mp4"
+    quirky.write_bytes(ftyp + bytes(mdat) + moov)
+
+    boxes = {name for name, _ in _read_mp4_boxes(quirky)}
+    assert "moov" not in boxes, "the naive walk is expected to miss it here"
+    assert _contains_moov_signature(quirky), "the raw bytes still hold a real moov"
+
+
+def test_moov_signature_is_false_for_a_genuinely_truncated_file(dataset, tmp_path):
+    """The safety net must not turn an actually-incomplete copy into a false
+    negative: a cut-short file never had a moov box written at all."""
+    cut = _truncate(dataset.video, tmp_path / "half.mp4")
+    assert not _contains_moov_signature(cut), "a cut-short copy has no moov anywhere"
+
+
+def source_box(name: bytes, payload: bytes) -> bytes:
+    return (8 + len(payload)).to_bytes(4, "big") + name + payload
 
 
 def test_a_healthy_video_is_reported_as_healthy(dataset):

@@ -52,6 +52,44 @@ async function readTopLevelBoxes(file, limit = 64) {
   return boxes;
 }
 
+function indexOfBytes(haystack, needle) {
+  outer: for (let i = 0; i <= haystack.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) {
+      if (haystack[i + j] !== needle[j]) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+
+/**
+ * Safety net for `readTopLevelBoxes`: a box that declares its size as `0`
+ * ("runs to the end of the file", legal per the spec) makes the sequential
+ * walk jump straight to EOF -- but some real-world muxers write that box
+ * mid-file anyway and still append a real `moov` after it, which the walk
+ * then never sees. Rather than trust the walk alone, look for the literal
+ * `moov` bytes in the regions a box actually lives in: near the front
+ * ("fast start" layouts) or near the end (camera-native captures, where the
+ * device does not know moov's contents until recording stops). A file whose
+ * copy genuinely stopped early has no `moov` bytes anywhere, so this cannot
+ * turn a real truncation into a false negative -- it only rescues files the
+ * simple walk was wrong about.
+ */
+async function hasMoovSignature(file) {
+  const pattern = [0x6d, 0x6f, 0x6f, 0x76]; // "moov"
+  const headSize = Math.min(file.size, 4 * 1024 * 1024);
+  const tailSize = Math.min(file.size, 20 * 1024 * 1024);
+  const regions = [
+    file.slice(0, headSize),
+    file.slice(Math.max(0, file.size - tailSize), file.size),
+  ];
+  for (const region of regions) {
+    const bytes = new Uint8Array(await region.arrayBuffer());
+    if (indexOfBytes(bytes, pattern) !== -1) return true;
+  }
+  return false;
+}
+
 /**
  * Diagnose why a video file will not load, using only its box structure --
  * no network, no upload. Returns a Korean message ready to show the user,
@@ -72,6 +110,10 @@ async function diagnoseVideoFile(file) {
     return null; // not an MP4/MOV we recognise -- let the generic message stand
   }
   if (!boxes.includes("moov")) {
+    const rescued = await hasMoovSignature(file).catch(() => false);
+    if (rescued) {
+      return null; // the walk missed it -- a real codec/format issue, not this
+    }
     return (
       "이 파일은 재생에 필요한 색인(moov)이 없습니다 -- 옮기다가 끊긴, " +
       "불완전한 파일입니다. 코덱 문제가 아니라서 다른 형식으로 바꿔도 " +
@@ -82,4 +124,8 @@ async function diagnoseVideoFile(file) {
   return null; // structurally fine -- a genuine codec/format issue
 }
 
-window.faradayFileCheck = { readTopLevelBoxes, diagnoseVideoFile };
+window.faradayFileCheck = {
+  readTopLevelBoxes,
+  diagnoseVideoFile,
+  hasMoovSignature,
+};
