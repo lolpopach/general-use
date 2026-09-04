@@ -5,6 +5,14 @@ Two layers:
 - `cv.test.mjs` — pure unit tests of `static/cv.js` (HSV conversion, masking,
   morphology, connected components, blob selection, colour picking). No
   browser needed: `node tests/browser/cv.test.mjs`.
+- `filecheck.test.mjs` — pure unit tests of `static/filecheck.js`, which
+  walks a video File's MP4 box structure client-side to tell "the browser
+  cannot decode this codec" apart from "this file's copy was cut short and
+  its `moov` index is missing" -- the second is common with large phone
+  videos sent through email or KakaoTalk, and needs different advice ("get a
+  clean copy") rather than "try another format", which does nothing for a
+  file whose frame data already ends mid-copy. No browser needed:
+  `node tests/browser/filecheck.test.mjs`.
 - `test_e2e.py` — drives the actual page in a real (headless) Chromium via
   Playwright: load a video, click the magnet, set the coil/LED/scale, run,
   and check the results that come back from `/api/analyze`. Requires

@@ -272,25 +272,25 @@ MP4는 재생에 필요한 색인(`moov`)이 파일 끝에 있어서, 복사가 
 
 ## 잘 안 될 때
 
-| 증상                                          | 확인할 것                                                                                       |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 검출률이 낮다 (`detected in only …%`)         | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                                  |
-| 덩어리가 여러 개 잡힌다                       | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                                       |
-| `LED never crossed the on-threshold`          | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`/"수동 t₀"로 지정                      |
-| `LED region is bright in every frame`         | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요              |
-| `records do not overlap`                      | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                             |
-| ℰ/v가 회전점에서 폭발한다                     | 정상입니다(v→0). `--v-min`을 올리세요                                                           |
-| 속도 곡선이 톱니처럼 떨린다                   | `--smooth` 값을 키우세요(프레임 수, 홀수)                                                       |
-| 웹 UI에서 영상이 안 열린다                    | 브라우저가 그 코덱을 재생 못 하는 경우입니다. H.264(mp4)로 다시 내보내 보세요                   |
-| 웹 UI에서 추적이 오래 걸린다                  | 영상이 길거나 해상도가 큰 경우입니다. 검색 영역(ROI)을 지정하면 빨라집니다                      |
-| "경로로 열기"/서버 업로드가 안 보인다         | 공개 배포(`FARADAYCV_LOCAL_MODE=0`)에서는 의도적으로 꺼져 있습니다. 브라우저 추적을 쓰세요      |
-| `cannot read that video`                      | `python3 -m faradaycv doctor 파일` 로 원인을 먼저 확인하세요 (CLI/로컬 전용 기능)               |
-| `moov atom is missing` / `Invalid data found` | 코덱이 아니라 **잘린 파일**입니다. 원본을 다시 내보내거나 다시 복사하세요                       |
-| `zsh: command not found: pip`                 | macOS에는 `pip` 명령이 없습니다. `python3 -m pip` 를 쓰세요                                     |
-| `No module named 'flask'` / `'cv2'`           | 설치를 건너뛴 경우입니다. 위 **설치** 절차(venv + `python3 -m pip install -r requirements.txt`) |
-| `No module named faradaycv`                   | `faraday-cv` 폴더 밖에서 실행한 경우입니다                                                      |
-| `zsh: command not found: #`                   | 명령 뒤 주석까지 복사한 경우입니다. zsh는 대화형에서 `#`을 주석으로 보지 않습니다               |
-| `externally-managed-environment`              | 시스템 파이썬에 직접 설치하려 한 경우. venv를 만들거나 `--user` 를 붙이세요                     |
+| 증상                                          | 확인할 것                                                                                                                                                                                                                                                |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 검출률이 낮다 (`detected in only …%`)         | S/V 하한을 낮추고 H 범위를 넓히세요. `--min-area`도 줄여보세요                                                                                                                                                                                           |
+| 덩어리가 여러 개 잡힌다                       | 검색 영역(ROI) 지정, 또는 H 범위를 좁히기                                                                                                                                                                                                                |
+| `LED never crossed the on-threshold`          | LED 영역이 LED를 제대로 덮는지 확인. 안 되면 `--t0-video`/"수동 t₀"로 지정                                                                                                                                                                               |
+| `LED region is bright in every frame`         | LED가 켜진 뒤에 녹화를 시작한 경우. **녹화를 먼저 시작**하고 아두이노를 리셋하세요                                                                                                                                                                       |
+| `records do not overlap`                      | 전압 로그와 영상이 다른 시행의 것이거나 t₀가 잘못됨                                                                                                                                                                                                      |
+| ℰ/v가 회전점에서 폭발한다                     | 정상입니다(v→0). `--v-min`을 올리세요                                                                                                                                                                                                                    |
+| 속도 곡선이 톱니처럼 떨린다                   | `--smooth` 값을 키우세요(프레임 수, 홀수)                                                                                                                                                                                                                |
+| 웹 UI에서 영상이 안 열린다                    | 메시지가 **"색인(moov)이 없다"** 면 코덱이 아니라 **파일이 옮기다 잘린 것**입니다 — 형식을 바꿔도 소용없고, 원본을 다시 받아야 합니다(이메일 첨부·카카오톡 대용량 전송이 흔한 원인). 그 외의 메시지면 진짜 코덱 문제이니 H.264(mp4)로 다시 내보내 보세요 |
+| 웹 UI에서 추적이 오래 걸린다                  | 영상이 길거나 해상도가 큰 경우입니다. 검색 영역(ROI)을 지정하면 빨라집니다                                                                                                                                                                               |
+| "경로로 열기"/서버 업로드가 안 보인다         | 공개 배포(`FARADAYCV_LOCAL_MODE=0`)에서는 의도적으로 꺼져 있습니다. 브라우저 추적을 쓰세요                                                                                                                                                               |
+| `cannot read that video`                      | `python3 -m faradaycv doctor 파일` 로 원인을 먼저 확인하세요 (CLI/로컬 전용 기능)                                                                                                                                                                        |
+| `moov atom is missing` / `Invalid data found` | 코덱이 아니라 **잘린 파일**입니다. 원본을 다시 내보내거나 다시 복사하세요                                                                                                                                                                                |
+| `zsh: command not found: pip`                 | macOS에는 `pip` 명령이 없습니다. `python3 -m pip` 를 쓰세요                                                                                                                                                                                              |
+| `No module named 'flask'` / `'cv2'`           | 설치를 건너뛴 경우입니다. 위 **설치** 절차(venv + `python3 -m pip install -r requirements.txt`)                                                                                                                                                          |
+| `No module named faradaycv`                   | `faraday-cv` 폴더 밖에서 실행한 경우입니다                                                                                                                                                                                                               |
+| `zsh: command not found: #`                   | 명령 뒤 주석까지 복사한 경우입니다. zsh는 대화형에서 `#`을 주석으로 보지 않습니다                                                                                                                                                                        |
+| `externally-managed-environment`              | 시스템 파이썬에 직접 설치하려 한 경우. venv를 만들거나 `--user` 를 붙이세요                                                                                                                                                                              |
 
 ## 개발
 

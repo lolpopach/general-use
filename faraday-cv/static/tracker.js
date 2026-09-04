@@ -26,9 +26,13 @@ class VideoTracker {
   async load() {
     await new Promise((resolve, reject) => {
       this.video.addEventListener("loadedmetadata", resolve, { once: true });
-      this.video.addEventListener("error", () => reject(this._loadError()), {
-        once: true,
-      });
+      this.video.addEventListener(
+        "error",
+        () => {
+          this._loadError().then(reject);
+        },
+        { once: true },
+      );
     });
     this.canvas.width = this.video.videoWidth;
     this.canvas.height = this.video.videoHeight;
@@ -47,7 +51,24 @@ class VideoTracker {
     };
   }
 
-  _loadError() {
+  /**
+   * Turn a MediaError into a message the user can act on.
+   *
+   * MEDIA_ERR_SRC_NOT_SUPPORTED covers two very different problems: a codec
+   * the browser genuinely cannot decode, and a file that never finished
+   * copying (common with large phone videos sent through email/KakaoTalk --
+   * MP4 keeps its index at the end of the file, so a transfer that stops
+   * early leaves a plausible-sized file nothing can open).  "Try another
+   * format" is wrong advice for the second case, so this checks the file's
+   * own box structure first -- the same check the CLI's `doctor` command
+   * runs server-side -- before falling back to the generic message.
+   */
+  async _loadError() {
+    const specific = await window.faradayFileCheck
+      .diagnoseVideoFile(this.file)
+      .catch(() => null);
+    if (specific) return new Error(`영상을 열 수 없습니다: ${specific}`);
+
     const code = this.video.error && this.video.error.code;
     const reasons = {
       1: "재생이 중단되었습니다",
