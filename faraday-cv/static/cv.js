@@ -49,6 +49,61 @@ function hueInRange(h, loH, hiH) {
   return loH <= hiH ? h >= loH && h <= hiH : h >= loH || h <= hiH;
 }
 
+function extractChannel(data, w, h, offset) {
+  const n = w * h;
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) out[i] = data[i * 4 + offset];
+  return out;
+}
+
+/**
+ * Box blur (moving average), separable horizontal then vertical pass, via a
+ * running sum so each pass stays O(w*h) regardless of kernel size -- the
+ * browser twin of Python's `cv2.GaussianBlur` in `to_hsv()`. Not pixel-
+ * identical to a Gaussian, but the point is the same: without smoothing,
+ * isolated same-hue noise (JPEG blocking, skin, wood grain) passes the HSV
+ * box just as easily as the magnet, and shows up as spurious blobs.
+ * Border pixels repeat the edge value (clamp), same idea as Python's default.
+ */
+function boxBlurChannel(src, w, h, k) {
+  const half = Math.floor(k / 2);
+  const span = 2 * half + 1;
+  const tmp = new Float64Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    let sum = 0;
+    for (let x = -half; x <= half; x++) sum += src[row + clamp(x, 0, w - 1)];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = sum;
+      sum +=
+        src[row + clamp(x + half + 1, 0, w - 1)] -
+        src[row + clamp(x - half, 0, w - 1)];
+    }
+  }
+  const out = new Uint8Array(w * h);
+  for (let x = 0; x < w; x++) {
+    let sum = 0;
+    for (let y = -half; y <= half; y++) sum += tmp[clamp(y, 0, h - 1) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = Math.round(sum / (span * span));
+      sum +=
+        tmp[clamp(y + half + 1, 0, h - 1) * w + x] -
+        tmp[clamp(y - half, 0, h - 1) * w + x];
+    }
+  }
+  return out;
+}
+
+/** R/G/B channels, blurred if `blur` is a real kernel size (mirrors to_hsv). */
+function blurredChannels(data, w, h, blur) {
+  const channels = [0, 1, 2].map((offset) =>
+    extractChannel(data, w, h, offset),
+  );
+  if (!blur || blur < 3) return channels;
+  const k = blur % 2 === 1 ? blur : blur + 1;
+  return channels.map((ch) => boxBlurChannel(ch, w, h, k));
+}
+
 /**
  * Threshold one frame into a 0/255 mask.  `segment` may carry blur/open/close
  * (kernel sizes, pixels) and a roi [x,y,w,h] to restrict the search window --
@@ -65,11 +120,13 @@ function buildMask(imageData, color, segment) {
   const x1 = roi ? Math.min(w, rx + rw) : w;
   const y1 = roi ? Math.min(h, ry + rh) : h;
 
+  const [r, g, b] = blurredChannels(data, w, h, segment && segment.blur);
+
   for (let y = y0; y < y1; y++) {
     let row = y * w;
     for (let x = x0; x < x1; x++) {
-      const i = (row + x) * 4;
-      const [hh, s, v] = rgbToHsv(data[i], data[i + 1], data[i + 2]);
+      const idx = row + x;
+      const [hh, s, v] = rgbToHsv(r[idx], g[idx], b[idx]);
       if (
         hueInRange(hh, c.h_lo, c.h_hi) &&
         s >= c.s_lo &&
@@ -356,6 +413,7 @@ window.faradayCV = {
   rgbToHsv,
   normalizeColor,
   buildMask,
+  boxBlurChannel,
   cleanMask,
   findBlobs,
   selectBlob,

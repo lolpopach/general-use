@@ -13,7 +13,14 @@ const state = {
   frame: 0, // seconds
   mode: "magnet",
   color: { h_lo: 0, h_hi: 10, s_lo: 80, s_hi: 255, v_lo: 60, v_hi: 255 },
-  segment: { blur: 5, open_ksize: 3, close_ksize: 7, min_area: 40, roi: null },
+  segment: {
+    blur: 5,
+    open_ksize: 3,
+    close_ksize: 7,
+    min_area: 40,
+    max_jump_px: null,
+    roi: null,
+  },
   coil: null,
   ledRoi: null,
   scaleLine: null,
@@ -498,6 +505,13 @@ for (const [id, key] of [
     scheduleRefresh();
   });
 }
+
+$("max-jump").addEventListener("change", (event) => {
+  const value = parseFloat(event.target.value);
+  state.segment.max_jump_px =
+    Number.isFinite(value) && value > 0 ? value : null;
+  scheduleRefresh();
+});
 
 $("scale-length").addEventListener("change", () => {
   if (!state.scaleLine) return;
