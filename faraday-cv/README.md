@@ -114,8 +114,18 @@ peak separation : -0.190 s (speed at the emf peak: 0.453 m/s)
 없음) 아주 작은 인스턴스로 충분합니다.
 
 **Render** — 이 저장소를 GitHub에 두고, Render에서 "New +" → "Blueprint" →
-이 저장소 선택. `render.yaml` 이 자동으로 인식됩니다 (root: `faraday-cv/`).
-무료 플랜으로 충분합니다.
+이 저장소 선택. **저장소 루트**의 `render.yaml`(이 `faraday-cv/` 폴더 밖,
+`general-use/render.yaml`)을 Render가 자동으로 인식하고, 그 안의 `rootDir`
+설정이 실제 빌드는 `faraday-cv/` 안에서 하도록 지정합니다. 무료 플랜으로
+충분합니다.
+
+> Render가 `render.yaml`을 못 찾고 Dockerfile을 찾다 실패하면("open
+> Dockerfile: no such file or directory"), Blueprint가 아니라 "New +" →
+> "Web Service"로 직접 만든 경우일 수 있습니다. 그럴 땐 서비스 설정에서
+> **Root Directory**를 `faraday-cv`로, **Runtime/Environment**를 `Python 3`
+> 으로, **Build Command**를 `pip install -r requirements-web.txt`, **Start
+> Command**를 `gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60 wsgi:app`
+> 로 직접 지정하세요.
 
 **Fly.io**:
 
@@ -326,5 +336,6 @@ static/
   app.js, style.css, index.html   웹 UI
 arduino/faraday_logger/   ADS1115 + LED 마커 스케치
 tools/serial_logger.py    시리얼 → CSV 저장
-wsgi.py, Dockerfile, render.yaml, fly.toml   배포용
+wsgi.py, Dockerfile, fly.toml   배포용
+../render.yaml   Render Blueprint (저장소 루트에 위치 -- Render가 그곳에서 찾음)
 ```

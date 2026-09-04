@@ -1,7 +1,10 @@
 # Render Blueprint: https://render.com/docs/blueprint-spec
 #
-# New Render service -> "Blueprint" -> point at this repo (root: faraday-cv/).
-# Free tier: 512 MB RAM is plenty since the server never decodes video.
+# This lives at the repo root (not inside faraday-cv/) because that is where
+# Render's Blueprint feature looks by default -- "New +" -> "Blueprint" ->
+# point at this repo, and `rootDir` below scopes the actual build/start to
+# the faraday-cv/ subdirectory. Free tier: 512 MB RAM is plenty since the
+# server never decodes video.
 services:
   - type: web
     name: faraday-cv
