@@ -131,6 +131,20 @@ class VideoTracker {
     return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
   }
 
+  /** LED brightness alone, reading just that rectangle off the canvas.
+   * Used for the frames outside the analysis range, where the magnet is not
+   * being segmented and pulling the whole frame back would be wasted work. */
+  ledLevelOnly(roi) {
+    const [rx, ry, rw, rh] = roi;
+    const x0 = Math.max(0, Math.floor(rx));
+    const y0 = Math.max(0, Math.floor(ry));
+    const x1 = Math.min(this.canvas.width, Math.ceil(rx + rw));
+    const y1 = Math.min(this.canvas.height, Math.ceil(ry + rh));
+    if (x1 <= x0 || y1 <= y0) return NaN;
+    const patch = this.ctx.getImageData(x0, y0, x1 - x0, y1 - y0);
+    return window.faradayCV.ledLevel(patch, [0, 0, x1 - x0, y1 - y0]);
+  }
+
   async frameImageData(t) {
     await this.seekTo(t);
     return this.imageDataAt();
@@ -163,8 +177,14 @@ class VideoTracker {
    *
    * `startTime`/`endTime` (seconds) restrict the walk to part of the clip --
    * the browser twin of the CLI's --start-frame/--end-frame.  Timestamps
-   * stay absolute video time, so the LED sync downstream is unaffected as
-   * long as the LED flash itself is inside the range.
+   * stay absolute video time throughout.
+   *
+   * The LED is deliberately *not* trimmed with the magnet.  It is what syncs
+   * the video to the voltage log, and the onset heuristic has to see the dark
+   * frames before the flash to find it -- but the flash is right at the top
+   * of a recording, which is exactly the part worth trimming away (hands
+   * still in frame).  So the LED trace is taken from the start of the clip
+   * regardless, and carries its own timestamps.
    */
   async trackAll({
     color,
@@ -180,16 +200,30 @@ class VideoTracker {
       startTime,
       endTime,
     );
-    const nEst = Math.max(1, Math.round((end - start) * fps));
     const t = [],
       x = [],
       y = [],
       area = [],
-      led = ledRoi ? [] : null;
+      led = ledRoi ? [] : null,
+      ledT = ledRoi ? [] : null;
     let previous = null;
     let lastT = -Infinity;
 
-    for (let i = 0; i < nEst; i++) {
+    // Frames ahead of the range: LED only, and only that rectangle of it.
+    const nLead = ledRoi ? Math.max(0, Math.round(start * fps)) : 0;
+    const nEst = Math.max(1, Math.round((end - start) * fps)) + nLead;
+    for (let i = 0; i < nLead; i++) {
+      const requested = i / fps;
+      if (requested >= start) break;
+      const actual = await this.seekTo(requested);
+      if (actual <= lastT) continue;
+      lastT = actual;
+      led.push(this.ledLevelOnly(ledRoi));
+      ledT.push(actual);
+      if (onProgress && i % 3 === 0) onProgress(i, nEst);
+    }
+
+    for (let i = 0; i < nEst - nLead; i++) {
       const requested = start + i / fps;
       if (requested > end + 1e-3) break;
       const actual = await this.seekTo(requested);
@@ -214,9 +248,12 @@ class VideoTracker {
         y.push(null);
         area.push(0);
       }
-      if (led) led.push(window.faradayCV.ledLevel(img, ledRoi));
+      if (led) {
+        led.push(window.faradayCV.ledLevel(img, ledRoi));
+        ledT.push(actual);
+      }
 
-      if (onProgress && i % 3 === 0) onProgress(i, nEst);
+      if (onProgress && i % 3 === 0) onProgress(nLead + i, nEst);
     }
     if (onProgress) onProgress(nEst, nEst);
 
@@ -226,6 +263,7 @@ class VideoTracker {
       y,
       area,
       led,
+      led_t: ledT,
       width: this.canvas.width,
       height: this.canvas.height,
       fps,

@@ -236,17 +236,21 @@ def figure_diagnostics(track: Track, led_threshold: float | None = None):
         fig, axes = plt.subplots(nrows, 1, figsize=(6.5, 2.1 * nrows), sharex=True)
         axes = np.atleast_1d(axes)
 
-        axes[0].plot(track.frame, track.x, ".", ms=3, color=C_DISTANCE, label="x (px)")
-        axes[0].plot(track.frame, track.y, ".", ms=3, color=C_SPEED, label="y (px)")
+        # Video seconds, not frame index: the LED may have been sampled over a
+        # different stretch than the magnet was tracked over (the browser reads
+        # it from the top of the clip even when the analysis range starts
+        # later), and only a real time axis lines those two up honestly.
+        axes[0].plot(track.t, track.x, ".", ms=3, color=C_DISTANCE, label="x (px)")
+        axes[0].plot(track.t, track.y, ".", ms=3, color=C_SPEED, label="y (px)")
         axes[0].set_ylabel("centroid (px)")
         axes[0].legend(loc="upper right", ncol=2)
 
-        axes[1].plot(track.frame, track.area, color="0.35")
+        axes[1].plot(track.t, track.area, color="0.35")
         axes[1].set_ylabel("blob area (px)")
         missing = ~track.found
         if missing.any():
             axes[1].plot(
-                track.frame[missing],
+                track.t[missing],
                 np.zeros(missing.sum()),
                 "x",
                 color=C_VOLTAGE,
@@ -256,11 +260,12 @@ def figure_diagnostics(track: Track, led_threshold: float | None = None):
             axes[1].legend(loc="upper right")
 
         if track.led is not None:
-            axes[2].plot(track.frame, track.led, color="#e08a00")
+            led_t = track.led_t if track.led_t is not None else track.t
+            axes[2].plot(led_t, track.led, color="#e08a00")
             if led_threshold is not None and np.isfinite(led_threshold):
                 axes[2].axhline(led_threshold, color="0.5", ls="--", lw=0.8)
             axes[2].set_ylabel("LED level")
-        axes[-1].set_xlabel("frame")
+        axes[-1].set_xlabel("video time (s)")
         fig.align_ylabels(axes)
         fig.tight_layout()
     return fig

@@ -311,6 +311,68 @@ def _fake_track_payload(truth, offset_s=0.0):
     }
 
 
+def test_a_trimmed_track_still_syncs_off_the_untrimmed_led(client, dataset, truth):
+    """The LED is read from the top of the clip even when the magnet is not.
+
+    The flash sits at the head of a recording, which is exactly the stretch
+    worth trimming (hands still in frame).  So the browser sends the LED on
+    its own timestamps, and t=0 must come from those -- not from the first
+    frame the magnet was tracked on.
+    """
+    fps = truth["fps"]
+    led_frame = truth["led_frame"]
+    frames = truth["magnet_px"]
+
+    # the magnet is tracked only from well after the flash ...
+    first = led_frame + 12
+    payload = {
+        "t": [i / fps for i in range(first, len(frames))],
+        "x": [p[0] for p in frames[first:]],
+        "y": [p[1] for p in frames[first:]],
+        # ... while the LED trace still covers the clip from its very start
+        "led": [0.0 if i < led_frame else 250.0 for i in range(len(frames))],
+        "led_t": [i / fps for i in range(len(frames))],
+        "width": 640,
+        "height": 480,
+        "fps": fps,
+        "name": "trimmed.mp4",
+    }
+    body = {
+        "track": json.dumps(payload),
+        "config": json.dumps(
+            {
+                "calibration": {
+                    "mm_per_px": truth["mm_per_px"],
+                    "coil_px": truth["coil_px"],
+                },
+                "led_roi": truth["led_roi"],
+            }
+        ),
+        "voltage": (dataset.voltage.open("rb"), "voltage.csv"),
+    }
+    res = client.post("/api/analyze", data=body, content_type="multipart/form-data")
+    assert res.status_code == 200, res.get_json()
+    result = res.get_json()["result"]
+
+    assert result["led_frame"] == led_frame
+    assert result["t0_video_s"] == pytest.approx(truth["t0_video_s"], abs=1e-6)
+    # trimming must not be mistaken for the magnet going missing
+    assert result["detection_rate"] == 1.0
+
+
+def test_a_led_trace_that_does_not_match_its_timestamps_is_rejected(client, truth):
+    payload = _fake_track_payload(truth)
+    payload["led"] = [0.0, 250.0, 250.0]
+    payload["led_t"] = [0.0, 0.1]  # one short
+    res = client.post(
+        "/api/analyze",
+        data={"track": json.dumps(payload), "config": json.dumps({})},
+        content_type="multipart/form-data",
+    )
+    assert res.status_code == 400
+    assert "led_t" in res.get_json()["error"]
+
+
 def test_analyze_accepts_a_browser_track_with_no_video_upload(client, dataset, truth):
     """The whole point: results without ever sending a video to the server."""
     payload = _fake_track_payload(truth)

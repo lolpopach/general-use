@@ -276,6 +276,58 @@ def test_the_analysis_range_actually_trims_the_run(live_server, browser_video):
     assert not console_errors, console_errors
 
 
+def test_the_led_is_read_from_the_top_of_the_clip_when_trimmed(
+    live_server, browser_video, truth
+):
+    """A trim starting after the LED flash must not cost us the sync.
+
+    The flash sits at the head of a recording, which is exactly what a user
+    trims away, so the LED trace is taken from the start of the clip on its
+    own timestamps while the magnet is tracked only inside the range.
+    """
+    start = (truth["led_frame"] + 8) / truth["fps"]
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=CHROMIUM_PATH)
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.goto(live_server)
+            page.set_input_files("#video-file", str(browser_video))
+            page.wait_for_function(
+                "document.querySelector('#video-info').children.length > 0",
+                timeout=20000,
+            )
+            track = page.evaluate(
+                """async ([ledRoi, start]) => {
+                    const file = document.querySelector('#video-file').files[0];
+                    const tracker = new window.VideoTracker(file);
+                    await tracker.load();
+                    const out = await tracker.trackAll({
+                        color: { h_lo: 170, h_hi: 10, s_lo: 120, s_hi: 255,
+                                 v_lo: 80, v_hi: 255 },
+                        segment: { blur: 5, open_ksize: 3, close_ksize: 7,
+                                   min_area: 40, roi: null },
+                        ledRoi,
+                        fps: 30,
+                        startTime: start,
+                        endTime: null,
+                    });
+                    tracker.dispose();
+                    return { t: out.t, led: out.led, led_t: out.led_t };
+                }""",
+                [truth["led_roi"], start],
+            )
+        finally:
+            browser.close()
+
+    assert len(track["led"]) == len(track["led_t"]), "the LED trace lost its clock"
+    # the magnet starts late, but the LED still covers the dark frames before it
+    assert min(track["t"]) >= start - 1e-3
+    assert min(track["led_t"]) < start, "the LED was trimmed along with the magnet"
+    assert min(track["led_t"]) < 0.05, "the LED trace did not start at the clip's top"
+    # and the trace really does carry the dark-then-bright step the sync needs
+    assert max(track["led"]) - min(track["led"]) > 15, "no LED step to sync on"
+
+
 @pytest.mark.skipif(
     shutil.which("node") is None, reason="node is needed to run the cv.js unit tests"
 )

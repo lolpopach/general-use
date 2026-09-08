@@ -172,7 +172,7 @@ def analyse_track(track: Track, cfg: AnalysisConfig) -> AnalysisResult:
     if cfg.t0_video is not None:
         t0_video = float(cfg.t0_video)
     elif led_frame is not None:
-        t0_video = float(track.t[led_frame])
+        t0_video = track.led_time(led_frame)
     else:
         t0_video = 0.0
         if cfg.led_roi is None:

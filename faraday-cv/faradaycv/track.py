@@ -44,11 +44,22 @@ class Track:
     area: np.ndarray
     found: np.ndarray
     led: np.ndarray | None = None
+    #: Timestamps for ``led`` when it was sampled over a different span than
+    #: the magnet was tracked over -- the browser scans the LED from the top
+    #: of the clip even when the analysis range starts later, because the
+    #: onset heuristic needs to see the dark frames before the flash. ``None``
+    #: means the LED trace is parallel to ``t``, as it is from the CLI.
+    led_t: np.ndarray | None = None
     info: VideoInfo | None = None
     notes: list[str] = field(default_factory=list)
 
     def __len__(self) -> int:
         return int(self.frame.size)
+
+    def led_time(self, index: int) -> float:
+        """Video time of LED sample ``index``, on whichever span it was taken."""
+        stamps = self.led_t if self.led_t is not None else self.t
+        return float(stamps[index])
 
     @property
     def detection_rate(self) -> float:
@@ -76,6 +87,11 @@ class Track:
             area = np.where(np.isfinite(x), 1.0, 0.0)
         found = np.isfinite(x) & np.isfinite(y)
         led = data.get("led")
+        led_t = np.asarray(_floats(data.get("led_t")), dtype=float)
+        if led_t.size == 0:
+            led_t = None
+        elif led is None or led_t.size != len(_floats(led)):
+            raise ValueError("led_t must be the same length as led")
         info = None
         if data.get("width") and data.get("height"):
             span = float(t[-1] - t[0])
@@ -95,6 +111,7 @@ class Track:
             area=area,
             found=found,
             led=np.asarray(_floats(led), dtype=float) if led else None,
+            led_t=led_t,
             info=info,
         )
         if track.detection_rate < 0.9:
