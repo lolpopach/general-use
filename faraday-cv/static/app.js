@@ -24,6 +24,8 @@ const state = {
   coil: null,
   ledRoi: null,
   scaleLine: null,
+  trimStart: null, // seconds; null means "from the start"
+  trimEnd: null, //   seconds; null means "to the end"
   voltageFile: null,
   sid: null,
   lastPainted: null,
@@ -289,6 +291,48 @@ function showFileName(spanId, file) {
   $(spanId).textContent = file ? file.name : "No file chosen";
 }
 
+/* ------------------------------------------------------------ trim range */
+
+/** Read a trim box: blank (or nonsense) means "no limit", i.e. null. */
+function readTrimField(id) {
+  const value = parseFloat($(id).value);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/** Restate the range the run will actually use, resolved the same way the
+ * tracker resolves it -- so what is shown is what will happen, including
+ * the fallback to the full clip when the two ends are the wrong way round. */
+function updateRangeInfo() {
+  const info = $("range-info");
+  if (!state.tracker) {
+    info.textContent = "";
+    return;
+  }
+  const { start, end } = window.faradayTracker.resolveRange(
+    state.duration,
+    state.trimStart,
+    state.trimEnd,
+  );
+  const full = end - start >= state.duration - 1e-3;
+  info.textContent = full
+    ? `Analysing the whole clip (${state.duration.toFixed(2)} s)`
+    : `Analysing ${start.toFixed(2)} s → ${end.toFixed(2)} s ` +
+      `(${(end - start).toFixed(2)} s of ${state.duration.toFixed(2)} s)`;
+  const backwards =
+    state.trimStart !== null &&
+    state.trimEnd !== null &&
+    state.trimEnd <= state.trimStart;
+  if (backwards) {
+    info.textContent += " — end is not after start, so the range was ignored";
+  }
+}
+
+function syncTrimFromFields() {
+  state.trimStart = readTrimField("trim-start");
+  state.trimEnd = readTrimField("trim-end");
+  updateRangeInfo();
+}
+
 $("video-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
@@ -301,6 +345,10 @@ $("video-file").addEventListener("change", async (event) => {
     state.tracker = tracker;
     state.duration = meta.duration;
     state.frame = 0;
+    // a range picked for the previous clip means nothing for this one
+    $("trim-start").value = "";
+    $("trim-end").value = "";
+    syncTrimFromFields();
     updateFpsStep();
     $("frame-slider").max = meta.duration;
     $("frame-slider").value = 0;
@@ -364,6 +412,8 @@ $("run").addEventListener("click", async () => {
       segment: state.segment,
       ledRoi,
       fps,
+      startTime: state.trimStart,
+      endTime: state.trimEnd,
       onProgress: (done, total) => {
         const pct = (100 * done) / Math.max(total, 1);
         $("progress").firstElementChild.style.width = `${pct.toFixed(0)}%`;
@@ -500,6 +550,21 @@ $("frame-slider").addEventListener("input", (event) => {
 
 $("show-mask").addEventListener("change", scheduleRefresh);
 $("track-fps").addEventListener("change", updateFpsStep);
+
+for (const id of ["trim-start", "trim-end"]) {
+  $(id).addEventListener("change", syncTrimFromFields);
+}
+
+for (const [buttonId, fieldId] of [
+  ["trim-start-here", "trim-start"],
+  ["trim-end-here", "trim-end"],
+]) {
+  $(buttonId).addEventListener("click", () => {
+    if (!state.tracker) return;
+    $(fieldId).value = state.frame.toFixed(2);
+    syncTrimFromFields();
+  });
+}
 
 for (const [id, key] of [
   ["min-area", "min_area"],

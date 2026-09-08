@@ -8,6 +8,23 @@
  * sent to the server.
  */
 
+/**
+ * Settle what stretch of the clip to analyse, in seconds.
+ *
+ * Anything missing, unparseable, or out of order falls back to the whole
+ * video rather than silently analysing nothing: an empty box in the UI means
+ * "no limit", and a range whose end is not after its start is not a request
+ * to track zero frames, it is a range the user has not finished setting.
+ */
+function resolveRange(duration, startTime, endTime) {
+  const span = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const asTime = (value, fallback) =>
+    Number.isFinite(value) ? Math.min(Math.max(value, 0), span) : fallback;
+  const start = asTime(startTime, 0);
+  const end = asTime(endTime, span);
+  return end > start ? { start, end } : { start: 0, end: span };
+}
+
 class VideoTracker {
   /** `canvas` is optional -- pass the page's visible canvas to draw there
    * directly, or omit it to get an off-DOM one (used by headless callers). */
@@ -140,13 +157,30 @@ class VideoTracker {
   }
 
   /**
-   * Walk the whole video, segmenting every frame.  `fps` is the nominal rate
-   * to step at; the timestamp actually recorded is what the browser reports
+   * Walk the video, segmenting every frame.  `fps` is the nominal rate to
+   * step at; the timestamp actually recorded is what the browser reports
    * after each seek, so a variable frame rate does not distort the physics.
+   *
+   * `startTime`/`endTime` (seconds) restrict the walk to part of the clip --
+   * the browser twin of the CLI's --start-frame/--end-frame.  Timestamps
+   * stay absolute video time, so the LED sync downstream is unaffected as
+   * long as the LED flash itself is inside the range.
    */
-  async trackAll({ color, segment, ledRoi, fps, onProgress }) {
-    const duration = this.video.duration;
-    const nEst = Math.max(1, Math.round(duration * fps));
+  async trackAll({
+    color,
+    segment,
+    ledRoi,
+    fps,
+    startTime,
+    endTime,
+    onProgress,
+  }) {
+    const { start, end } = resolveRange(
+      this.video.duration,
+      startTime,
+      endTime,
+    );
+    const nEst = Math.max(1, Math.round((end - start) * fps));
     const t = [],
       x = [],
       y = [],
@@ -156,8 +190,8 @@ class VideoTracker {
     let lastT = -Infinity;
 
     for (let i = 0; i < nEst; i++) {
-      const requested = i / fps;
-      if (requested > duration + 1e-3) break;
+      const requested = start + i / fps;
+      if (requested > end + 1e-3) break;
       const actual = await this.seekTo(requested);
       if (actual <= lastT) continue; // the video has no new frame here
       lastT = actual;
@@ -201,3 +235,4 @@ class VideoTracker {
 }
 
 window.VideoTracker = VideoTracker;
+window.faradayTracker = { resolveRange };

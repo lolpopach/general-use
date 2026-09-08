@@ -235,6 +235,35 @@ select {
   overflow-wrap: anywhere;
 }
 
+.range-block {
+  margin-top: 10px;
+}
+
+.range-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.range-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.range-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.range-row button {
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
 .sliders {
   display: grid;
   gap: 4px;

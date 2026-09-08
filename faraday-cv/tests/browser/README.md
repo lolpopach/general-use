@@ -5,6 +5,10 @@ Two layers:
 - `cv.test.mjs` — pure unit tests of `static/cv.js` (HSV conversion, masking,
   morphology, connected components, blob selection, colour picking). No
   browser needed: `node tests/browser/cv.test.mjs`.
+- `tracker.test.mjs` — pure unit tests of the range resolution in
+  `static/tracker.js`: which stretch of a clip a run walks when the user has
+  set a start, an end, both, neither, or something contradictory. No browser
+  needed: `node tests/browser/tracker.test.mjs`.
 - `filecheck.test.mjs` — pure unit tests of `static/filecheck.js`, which
   walks a video File's MP4 box structure client-side to tell "the browser
   cannot decode this codec" apart from "this file's copy was cut short and

@@ -75,6 +75,51 @@
             this browser.
           </p>
           <dl id="video-info" class="info"></dl>
+
+          <div class="range-block">
+            <span class="range-title">Analysis range</span>
+            <div class="grid2">
+              <label
+                >Start (s)
+                <div class="range-row">
+                  <input
+                    id="trim-start"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="from the start"
+                  />
+                  <button id="trim-start-here" class="ghost" type="button">
+                    Use current
+                  </button>
+                </div>
+              </label>
+              <label
+                >End (s)
+                <div class="range-row">
+                  <input
+                    id="trim-end"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="to the end"
+                  />
+                  <button id="trim-end-here" class="ghost" type="button">
+                    Use current
+                  </button>
+                </div>
+              </label>
+            </div>
+            <p class="tip">
+              Analyse only part of the clip — drag the slider to a moment, then
+              press “Use current”. Trimming off the setup at the start (hands in
+              frame) and whatever follows the swing makes tracking both faster
+              and harder to derail.
+              <strong>Keep the LED flash inside the range</strong>, though: it
+              is what syncs the video to the voltage log.
+            </p>
+            <p id="range-info" class="stats"></p>
+          </div>
         </details>
 
         <details open>

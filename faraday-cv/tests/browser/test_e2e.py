@@ -213,13 +213,77 @@ def test_browser_tracking_reproduces_the_papers_result(
     assert "Separation between the two peaks" in rows
 
 
+def test_the_analysis_range_actually_trims_the_run(live_server, browser_video):
+    """Setting start/end must restrict the frames a real run walks.
+
+    The unit tests cover how a range is resolved; this covers the part only a
+    browser can answer -- that the resolved range reaches trackAll and the
+    timestamps it records stay inside it.
+    """
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=CHROMIUM_PATH)
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            console_errors = []
+            page.on(
+                "console",
+                lambda m: console_errors.append(m.text) if m.type == "error" else None,
+            )
+            page.goto(live_server)
+            page.set_input_files("#video-file", str(browser_video))
+            page.wait_for_function(
+                "document.querySelector('#video-info').children.length > 0",
+                timeout=20000,
+            )
+
+            duration = page.evaluate("document.querySelector('#frame-slider').max")
+            duration = float(duration)
+            assert duration > 1.0, f"demo clip too short to trim: {duration}"
+
+            page.fill("#trim-start", "0.30")
+            page.fill("#trim-end", "0.70")
+            page.dispatch_event("#trim-end", "change")
+            assert "0.30 s → 0.70 s" in page.inner_text("#range-info")
+
+            # walk the video with the page's own tracker class, as Run would
+            stamps = page.evaluate(
+                """async () => {
+                    const file = document.querySelector('#video-file').files[0];
+                    const tracker = new window.VideoTracker(file);
+                    await tracker.load();
+                    const track = await tracker.trackAll({
+                        color: { h_lo: 0, h_hi: 179, s_lo: 0, s_hi: 255,
+                                 v_lo: 0, v_hi: 255 },
+                        segment: { blur: 0, open_ksize: 0, close_ksize: 0,
+                                   min_area: 1, roi: null },
+                        ledRoi: null,
+                        fps: 30,
+                        startTime: 0.3,
+                        endTime: 0.7,
+                    });
+                    tracker.dispose();
+                    return track.t;
+                }"""
+            )
+        finally:
+            browser.close()
+
+    assert stamps, "the trimmed run recorded no frames at all"
+    assert min(stamps) >= 0.3 - 1e-3, f"walked before the start: {min(stamps)}"
+    assert max(stamps) <= 0.7 + 0.05, f"walked past the end: {max(stamps)}"
+    # and it really is a slice, not the whole clip relabelled
+    assert max(stamps) < duration - 0.1, "the trim did not shorten the run"
+    assert not console_errors, console_errors
+
+
 @pytest.mark.skipif(
     shutil.which("node") is None, reason="node is needed to run the cv.js unit tests"
 )
 def test_the_cv_js_unit_tests_pass():
     """The pure-JS colour segmentation, checked without a browser at all."""
     here = Path(__file__).parent
-    result = subprocess.run(
-        ["node", str(here / "cv.test.mjs")], capture_output=True, text=True, timeout=30
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+    for suite in ("cv.test.mjs", "tracker.test.mjs"):
+        result = subprocess.run(
+            ["node", str(here / suite)], capture_output=True, text=True, timeout=30
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
