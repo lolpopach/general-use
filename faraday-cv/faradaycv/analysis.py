@@ -13,7 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy.signal import savgol_filter
+# scipy is imported inside the one function that needs it, not here: it costs
+# the better part of a second to load, and on a free-tier host that is time
+# every cold start spends before the page can even be served.  Nothing on the
+# path from "browser asks for the page" to "page is served" needs it.
 
 from .track import Track
 from .voltage import VoltageLog
@@ -105,6 +108,8 @@ def smooth(values: np.ndarray, window: int, poly: int = 2) -> np.ndarray:
     if win < 3:
         return values
     order = min(poly, win - 1)
+    from scipy.signal import savgol_filter
+
     return savgol_filter(values, win, order)
 
 

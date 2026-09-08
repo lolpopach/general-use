@@ -23,6 +23,41 @@ def upload(client, path, endpoint="/api/video", **form):
     return client.post(endpoint, data=data, content_type="multipart/form-data")
 
 
+def test_serving_the_page_does_not_load_the_science_stack():
+    """Cold start is what a visitor waits through on a free-tier host.
+
+    Serving the page needs no maths and draws no figure, so scipy and
+    matplotlib -- together the better part of a second, plus matplotlib's font
+    work -- must stay unimported until something actually asks for an
+    analysis.  Run in a subprocess because the rest of this suite has long
+    since imported both.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    probe = textwrap.dedent("""
+        import sys
+        from faradaycv.webapp import create_app
+        app = create_app()
+        res = app.test_client().get("/")
+        assert res.status_code == 200, res.status_code
+        assert b"faraday-cv" in res.data
+        loaded = [m for m in ("scipy", "matplotlib") if m in sys.modules]
+        print(",".join(loaded))
+    """)
+    out = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=str(__import__("pathlib").Path(__file__).resolve().parents[1]),
+    )
+    assert out.returncode == 0, out.stdout + out.stderr
+    eager = out.stdout.strip()
+    assert not eager, f"serving the page pulled in {eager} -- keep those imports lazy"
+
+
 def test_the_page_loads(client):
     page = client.get("/")
     assert page.status_code == 200

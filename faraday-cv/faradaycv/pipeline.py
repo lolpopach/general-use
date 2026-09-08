@@ -10,13 +10,11 @@ from typing import Callable
 import numpy as np
 
 from .analysis import Calibration, Motion, Synced, build_motion, summarize, synchronize
-from .plots import (
-    figure_diagnostics,
-    figure_emf_over_velocity,
-    figure_motion_and_voltage,
-    needs_cjk_font,
-    save_figure,
-)
+
+# .plots pulls in matplotlib, which is slow to import and does font work on
+# the way in.  Nothing about serving the page needs a figure, so it is loaded
+# by the two functions that actually draw one -- keeping it off the cold-start
+# path, the same reason segmentation.py imports cv2 inside its functions.
 from .segmentation import ColorRange, SegmentConfig
 from .track import Track, led_onset_frame
 from .voltage import VoltageLog, load_voltage_csv
@@ -181,6 +179,8 @@ def analyse_track(track: Track, cfg: AnalysisConfig) -> AnalysisResult:
                 "first analysed frame"
             )
 
+    from .plots import needs_cjk_font
+
     if needs_cjk_font(cfg.title):
         notes.append(
             "the figure title uses characters no installed font can draw -- install "
@@ -228,6 +228,13 @@ def analyse_track(track: Track, cfg: AnalysisConfig) -> AnalysisResult:
 
 def export_results(result: AnalysisResult, outdir: str | Path) -> dict[str, str]:
     """Write CSVs, figures and summary.json; return the files by short name."""
+    from .plots import (
+        figure_diagnostics,
+        figure_emf_over_velocity,
+        figure_motion_and_voltage,
+        save_figure,
+    )
+
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     written: dict[str, str] = {}
