@@ -235,6 +235,52 @@ select {
   overflow-wrap: anywhere;
 }
 
+/* The measuring readout, directly under the canvas where the drag happened --
+   the real length belongs next to the line, not in a distant settings box. */
+.scale-panel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #2e7d32;
+  border-radius: 6px;
+  background: #f2f8f2;
+  font-size: 13px;
+}
+
+/* `display: flex` above would otherwise beat the UA's [hidden] rule */
+.scale-panel[hidden] {
+  display: none;
+}
+
+.scale-px {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.scale-entry {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.scale-entry input {
+  width: 90px;
+}
+
+.scale-result {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.scale-panel button {
+  margin-left: auto;
+}
+
 .range-block {
   margin-top: 10px;
 }

@@ -213,6 +213,84 @@ def test_browser_tracking_reproduces_the_papers_result(
     assert "Separation between the two peaks" in rows
 
 
+def test_measuring_a_length_sets_the_scale_only_once_a_real_value_is_given(
+    live_server, browser_video
+):
+    """Dragging measures; it must not calibrate on its own.
+
+    The field used to default to 100 mm, so a drag silently decided the scale
+    from a number nobody had confirmed -- and every distance and speed in the
+    results came out wrong by whatever that guess was off by, with nothing
+    saying so. A drag now reports pixels and waits.
+    """
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=CHROMIUM_PATH)
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            console_errors = []
+            page.on(
+                "console",
+                lambda m: console_errors.append(m.text) if m.type == "error" else None,
+            )
+            page.goto(live_server)
+            page.set_input_files("#video-file", str(browser_video))
+            page.wait_for_function(
+                "document.querySelector('#video-info').children.length > 0",
+                timeout=20000,
+            )
+
+            assert page.is_hidden("#scale-panel"), "nothing measured yet"
+            before = page.input_value("#mm-per-px")
+
+            box = page.locator("#canvas").bounding_box()
+            page.click("button[data-mode='scale']")
+            # drag a horizontal line across a quarter of the 640 px-wide frame
+            page.mouse.move(
+                box["x"] + box["width"] * 0.25, box["y"] + box["height"] * 0.5
+            )
+            page.mouse.down()
+            page.mouse.move(
+                box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5, steps=8
+            )
+            page.mouse.up()
+
+            assert page.is_visible("#scale-panel"), "the measurement should be shown"
+            measured_px = float(page.inner_text("#scale-px").split()[0])
+            assert 140 < measured_px < 180, f"expected ~160 px, got {measured_px}"
+
+            # the drag alone must change nothing
+            assert page.input_value("#mm-per-px") == before
+            assert "type the real length" in page.inner_text("#scale-result")
+
+            # now say what it really is
+            page.fill("#scale-mm", "80")
+            page.dispatch_event("#scale-mm", "input")
+            scale = float(page.input_value("#mm-per-px"))
+
+            # A second drag is a measurement, not a re-calibration: the length
+            # typed for the first line must not be reapplied to this one.
+            page.mouse.move(
+                box["x"] + box["width"] * 0.3, box["y"] + box["height"] * 0.3
+            )
+            page.mouse.down()
+            page.mouse.move(
+                box["x"] + box["width"] * 0.3, box["y"] + box["height"] * 0.6, steps=8
+            )
+            page.mouse.up()
+            assert page.input_value("#scale-mm") == "", "the old length carried over"
+            assert float(page.input_value("#mm-per-px")) == pytest.approx(scale), (
+                "a second drag silently changed the scale"
+            )
+            assert "at the current scale" in page.inner_text("#scale-result")
+        finally:
+            browser.close()
+
+    assert scale == pytest.approx(80 / measured_px, rel=1e-3), (
+        f"{measured_px} px called 80 mm should give {80 / measured_px} mm/px, got {scale}"
+    )
+    assert not console_errors, console_errors
+
+
 def test_the_analysis_range_actually_trims_the_run(live_server, browser_video):
     """Setting start/end must restrict the frames a real run walks.
 

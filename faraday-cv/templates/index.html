@@ -54,6 +54,24 @@
           >
         </div>
         <p id="hint" class="hint">Choose a video to begin.</p>
+
+        <div id="scale-panel" class="scale-panel" hidden>
+          <span class="scale-icon">📏</span>
+          <span id="scale-px" class="scale-px"></span>
+          <label class="scale-entry"
+            >is really
+            <input
+              id="scale-mm"
+              type="number"
+              step="0.1"
+              min="0"
+              placeholder="?"
+            />
+            mm</label
+          >
+          <span id="scale-result" class="scale-result"></span>
+          <button id="scale-clear" class="ghost" type="button">Clear</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -164,10 +182,6 @@
             <label
               >Coil x,y (px)
               <input id="coil" type="text" placeholder="click to set"
-            /></label>
-            <label
-              >Known length (mm)
-              <input id="scale-length" type="number" value="100"
             /></label>
             <label
               >mm/px

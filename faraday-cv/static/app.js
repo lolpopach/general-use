@@ -24,6 +24,9 @@ const state = {
   coil: null,
   ledRoi: null,
   scaleLine: null,
+  // Whether mm/px means anything yet.  It starts at 1, which is not a
+  // measurement -- it just means "no scale set, so a pixel counts as a mm".
+  calibrated: false,
   trimStart: null, // seconds; null means "from the start"
   trimEnd: null, //   seconds; null means "to the end"
   voltageFile: null,
@@ -68,6 +71,19 @@ function canvasPoint(event) {
   };
 }
 
+/** A readable caption on the canvas, on its own plate so it survives any
+ * background the frame happens to have under it. */
+function drawLengthLabel(x, y, text) {
+  ctx.font = "13px sans-serif";
+  const width = ctx.measureText(text).width;
+  const px = Math.min(Math.max(x + 8, 2), canvas.width - width - 8);
+  const py = Math.min(Math.max(y - 10, 16), canvas.height - 6);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+  ctx.fillRect(px - 4, py - 13, width + 8, 18);
+  ctx.fillStyle = "#2e7d32";
+  ctx.fillText(text, px, py);
+}
+
 /** Redraw the ROI/LED/scale/coil markers on top of whatever is on canvas now. */
 function drawMarkers() {
   if (state.segment.roi) {
@@ -94,7 +110,18 @@ function drawMarkers() {
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
+    // end caps, so what was measured is unambiguous at both ends
+    for (const [cx, cy] of [
+      [x0, y0],
+      [x1, y1],
+    ]) {
+      ctx.moveTo(cx - 4, cy - 4);
+      ctx.lineTo(cx + 4, cy + 4);
+      ctx.moveTo(cx + 4, cy - 4);
+      ctx.lineTo(cx - 4, cy + 4);
+    }
     ctx.stroke();
+    drawLengthLabel(x1, y1, lengthLabel(scaleLinePx()));
   }
   if (state.coil) {
     const [x, y] = state.coil;
@@ -114,6 +141,59 @@ function drawMarkers() {
 function redrawFromCache() {
   if (state.lastPainted) ctx.putImageData(state.lastPainted, 0, 0);
   drawMarkers();
+}
+
+/* ----------------------------------------------------------- length scale */
+
+function mmPerPx() {
+  const value = parseFloat($("mm-per-px").value);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Length of the drawn scale line in pixels, or 0 if there is none. */
+function scaleLinePx() {
+  if (!state.scaleLine) return 0;
+  const [x0, y0, x1, y1] = state.scaleLine;
+  return Math.hypot(x1 - x0, y1 - y0);
+}
+
+/** How a dragged length reads: pixels, plus millimetres once calibrated. */
+function lengthLabel(px) {
+  const scale = state.calibrated ? mmPerPx() : null;
+  return scale
+    ? `${px.toFixed(1)} px · ${(px * scale).toFixed(1)} mm`
+    : `${px.toFixed(1)} px`;
+}
+
+/**
+ * Show what was measured, and turn it into a scale once the user says what
+ * the line really is.
+ *
+ * Nothing is applied until they type a length. A line by itself carries no
+ * scale, and the previous default of "assume 100 mm" quietly multiplied every
+ * distance and speed in the results by however wrong that guess was.
+ */
+function updateScalePanel() {
+  const panel = $("scale-panel");
+  panel.hidden = !state.scaleLine;
+  if (!state.scaleLine) return;
+
+  const px = scaleLinePx();
+  $("scale-px").textContent = `${px.toFixed(1)} px`;
+
+  const mm = parseFloat($("scale-mm").value);
+  if (Number.isFinite(mm) && mm > 0 && px > 2) {
+    const scale = mm / px;
+    $("mm-per-px").value = scale.toFixed(5);
+    state.calibrated = true;
+    $("scale-result").textContent = `→ ${scale.toFixed(5)} mm/px`;
+  } else if (state.calibrated) {
+    // already calibrated, so this drag is just a measurement
+    $("scale-result").textContent =
+      `≈ ${(px * mmPerPx()).toFixed(1)} mm at the current scale`;
+  } else {
+    $("scale-result").textContent = "type the real length to set the scale";
+  }
 }
 
 let refreshTimer = null;
@@ -189,6 +269,12 @@ canvas.addEventListener("pointermove", (event) => {
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(current.x, current.y);
     ctx.stroke();
+    ctx.setLineDash([]);
+    drawLengthLabel(
+      current.x,
+      current.y,
+      lengthLabel(Math.hypot(current.x - start.x, current.y - start.y)),
+    );
   } else {
     ctx.strokeRect(
       Math.min(start.x, current.x),
@@ -211,12 +297,16 @@ canvas.addEventListener("pointerup", () => {
     Math.abs(current.y - start.y),
   ];
   if (state.mode === "scale") {
-    state.scaleLine = [start.x, start.y, current.x, current.y];
     const px = Math.hypot(current.x - start.x, current.y - start.y);
-    const mm = parseFloat($("scale-length").value);
-    if (px > 2 && mm > 0) {
-      $("mm-per-px").value = (mm / px).toFixed(5);
-      setHint(`Length scale: ${px.toFixed(1)} px = ${mm} mm`);
+    // a stray click is not a measurement
+    state.scaleLine = px > 2 ? [start.x, start.y, current.x, current.y] : null;
+    // The length belonged to the previous line; carrying it over would let a
+    // new drag re-scale everything off a number that was never about it.
+    $("scale-mm").value = "";
+    updateScalePanel();
+    if (state.scaleLine) {
+      $("scale-mm").focus();
+      $("scale-mm").select();
     }
   } else if (state.mode === "led") {
     state.ledRoi = rect;
@@ -529,7 +619,9 @@ document.querySelectorAll("button.mode").forEach((btn) => {
     const hints = {
       magnet: "Click on the magnet to pick an HSV range.",
       coil: "Click the centre of the coil.",
-      scale: "Drag across a length you know, then check the mm value.",
+      scale:
+        "Drag across something whose real size you know (a ruler, the coil), " +
+        "then type that length below the canvas.",
       led: "Drag a rectangle over the LED (used for syncing).",
       roi: "Drag around just the area the magnet passes through to cut false detections.",
     };
@@ -585,12 +677,25 @@ $("max-jump").addEventListener("change", (event) => {
   scheduleRefresh();
 });
 
-$("scale-length").addEventListener("change", () => {
-  if (!state.scaleLine) return;
-  const [x0, y0, x1, y1] = state.scaleLine;
-  const px = Math.hypot(x1 - x0, y1 - y0);
-  const mm = parseFloat($("scale-length").value);
-  if (px > 2 && mm > 0) $("mm-per-px").value = (mm / px).toFixed(5);
+// live, so the scale follows each keystroke rather than waiting for a blur
+$("scale-mm").addEventListener("input", () => {
+  updateScalePanel();
+  redrawFromCache();
+});
+
+$("scale-clear").addEventListener("click", () => {
+  state.scaleLine = null;
+  $("scale-mm").value = "";
+  updateScalePanel();
+  redrawFromCache();
+});
+
+// typing mm/px straight in is its own way of calibrating
+$("mm-per-px").addEventListener("change", () => {
+  state.calibrated = mmPerPx() !== null;
+  $("scale-mm").value = "";
+  updateScalePanel();
+  redrawFromCache();
 });
 
 buildSliders();
