@@ -148,7 +148,7 @@ def test_asking_for_no_floor_keeps_the_exact_ratio_and_divides_nothing_by_zero()
 
 def _fake_track():
     """A one-second track moving at a varying, known speed."""
-    from faradaycv.video import Track, VideoInfo
+    from faradaycv.video import Track
 
     t = np.arange(31) / 30.0
     x = np.sin(2 * np.pi * t)  # pixels
@@ -160,7 +160,7 @@ def _fake_track():
         y=y,
         area=np.full(31, 100.0),
         found=np.ones(31, bool),
-        info=VideoInfo("fake", 30.0, 31, 640, 480),
+        info=None,  # a track from somewhere that never reported the geometry
     )
 
 
@@ -261,3 +261,43 @@ def test_pixel_jitter_does_not_reach_the_speed_as_a_ripple():
         smoothness.append(float(np.mean(np.abs(np.diff(speed, 2)))))
     quiet, noisy = smoothness
     assert noisy < quiet + 0.02, f"2 px of jitter added {noisy - quiet:.3f} of wiggle"
+
+
+@pytest.mark.parametrize(
+    "mm_per_px, flagged",
+    [
+        (0.4717, False),  # 1920 px of a 91 cm scene -- the real calibration
+        (4.32, True),  # the same drag with a length ~9x too large: 8.3 m frame
+        (0.005, True),  # microscope territory: a 1 cm frame
+        (1.5, False),  # a 2.9 m frame is wide but not absurd
+    ],
+)
+def test_a_scale_that_implies_an_impossible_frame_is_called_out(mm_per_px, flagged):
+    """A mistyped length is the one calibration error with no visible symptom:
+    every distance and speed is wrong by the same factor, so the curves keep
+    their shape and the figure looks healthy.  The frame width is the number
+    that gives it away."""
+    from faradaycv.video import Track, VideoInfo
+
+    t = np.arange(60) / 30.0
+    track = Track(
+        frame=np.arange(t.size),
+        t=t,
+        x=900 + 300 * np.sin(2 * np.pi * t),
+        y=np.full(t.size, 640.0),
+        area=np.full(t.size, 1800.0),
+        found=np.ones(t.size, bool),
+        info=VideoInfo("clip", 30.0, t.size, 1920, 1080),
+    )
+    notes = build_motion(track, Calibration(mm_per_px=mm_per_px)).notes
+    said = [n for n in notes if "frame is" in n]
+    assert bool(said) == flagged, notes
+    if flagged:
+        assert "off by the same factor" in said[0]
+
+
+def test_the_scale_check_stays_quiet_when_the_frame_size_is_unknown():
+    """A track measured somewhere that never reported the video geometry must
+    not be accused of a bad scale."""
+    motion = build_motion(_fake_track(), Calibration(mm_per_px=4.32))
+    assert not any("frame is" in note for note in motion.notes)

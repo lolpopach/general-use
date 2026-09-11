@@ -210,6 +210,8 @@ def build_motion(track: Track, calib: Calibration) -> Motion:
         motion.notes.append(
             "no length calibration given -- distances are in pixels, not metres"
         )
+    else:
+        motion.notes.extend(_scale_sanity(track, calib.mm_per_px))
     spread = _clock_spread(t)
     if spread > 0.25:
         motion.notes.append(
@@ -218,6 +220,32 @@ def build_motion(track: Track, calib: Calibration) -> Motion:
             "that does not wreck it, but a steadier recording would measure it better"
         )
     return motion
+
+
+#: A benchtop pendulum filmed on a desk: anything outside this is a typo, not
+#: an experiment.  Generous on purpose -- it is a smell test, not a rule.
+_PLAUSIBLE_FRAME_M = (0.03, 3.0)
+
+
+def _scale_sanity(track: Track, mm_per_px: float) -> list[str]:
+    """Complain if the scale implies a frame no tabletop experiment could fill.
+
+    A mistyped length is the one calibration error that produces no visible
+    symptom: every distance and speed comes out wrong by the same factor, the
+    curves keep their shape, and the figure looks perfectly healthy.  The
+    frame width, though, is something the student can check by eye.
+    """
+    if track.info is None or not track.info.width:
+        return []
+    frame_m = track.info.width * mm_per_px * 1e-3
+    lo, hi = _PLAUSIBLE_FRAME_M
+    if lo <= frame_m <= hi:
+        return []
+    return [
+        f"the length scale ({mm_per_px:.4g} mm/px) says the video frame is "
+        f"{frame_m:.3g} m wide. Check the measured line and the length typed for "
+        "it -- every distance and speed is off by the same factor if it is wrong"
+    ]
 
 
 def _clock_spread(t: np.ndarray) -> float:

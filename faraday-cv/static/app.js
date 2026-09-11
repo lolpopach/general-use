@@ -157,6 +157,22 @@ function scaleLinePx() {
   return Math.hypot(x1 - x0, y1 - y0);
 }
 
+/**
+ * How wide the whole frame is at this scale.
+ *
+ * A mistyped length is the one calibration mistake with no visible symptom:
+ * every distance and speed comes out wrong by the same factor, the curves
+ * keep their shape, and the figures look perfectly healthy. The frame width
+ * is the one number the student can check against the room in front of them.
+ */
+function frameWidthNote(scale) {
+  const width = canvas.width * scale; // mm
+  if (!Number.isFinite(width) || width <= 0) return "";
+  const shown =
+    width >= 1000 ? `${(width / 1000).toFixed(2)} m` : `${width.toFixed(0)} mm`;
+  return `  ·  whole frame ≈ ${shown} wide`;
+}
+
 /** How a dragged length reads: pixels, plus millimetres once calibrated. */
 function lengthLabel(px) {
   const scale = state.calibrated ? mmPerPx() : null;
@@ -186,7 +202,8 @@ function updateScalePanel() {
     const scale = mm / px;
     $("mm-per-px").value = scale.toFixed(5);
     state.calibrated = true;
-    $("scale-result").textContent = `→ ${scale.toFixed(5)} mm/px`;
+    $("scale-result").textContent =
+      `→ ${scale.toFixed(5)} mm/px${frameWidthNote(scale)}`;
   } else if (state.calibrated) {
     // already calibrated, so this drag is just a measurement
     $("scale-result").textContent =
