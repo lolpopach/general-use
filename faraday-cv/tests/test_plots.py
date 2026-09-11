@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import warnings
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from faradaycv.analysis import Synced
 from faradaycv.plots import (
+    C_DISTANCE,
+    C_SPEED,
+    C_VOLTAGE,
     PAPER_STYLE,
     _shade_spans,
     detail_window,
@@ -116,11 +120,47 @@ def test_the_axes_are_the_papers_units_not_si():
     synced = _synced()
     fig = figure_motion_and_voltage(synced)
     labels = [ax.get_ylabel() for ax in fig.axes]
-    ax = fig.axes[0]
-    drawn = ax.get_lines()[0].get_ydata()
+    drawn = fig.axes[0].get_lines()[0].get_ydata()
     plt.close(fig)
-    assert "Distance (cm) / Speed (cm/s)" in labels
+    assert labels == ["Distance (cm)", "Speed (cm/s)", "Induced voltage (mV)"]
     assert np.allclose(drawn, synced.distance * 100)
+
+
+def test_every_quantity_gets_its_own_axis_in_its_own_colour():
+    """Three scales means three sets of ticks, and the only thing saying which
+    belongs to which curve is the colour -- so the spine, the ticks and the
+    label all have to carry their series' colour, and the two extra axes have
+    to stand clear of the frame instead of on top of each other."""
+    fig = figure_motion_and_voltage(_synced())
+    by_label = {ax.get_ylabel(): ax for ax in fig.axes}
+    curves = {
+        "Distance (cm)": C_DISTANCE,
+        "Speed (cm/s)": C_SPEED,
+        "Induced voltage (mV)": C_VOLTAGE,
+    }
+    offsets = []
+    for label, color in curves.items():
+        ax = by_label[label]
+        side = "left" if ax.yaxis.get_ticks_position() == "left" else "right"
+        assert ax.yaxis.label.get_color() == color, label
+        assert ax.spines[side].get_edgecolor() == mcolors.to_rgba(color), label
+        if side == "right":
+            offsets.append(ax.spines["right"].get_position())
+    plt.close(fig)
+    assert len(offsets) == 2, "speed and voltage each need their own right axis"
+    assert len(set(offsets)) == 2, "the two right axes sit on the same line"
+
+
+def test_without_a_coil_the_speed_takes_the_left_axis():
+    """Two series need two axes, not three with an empty one on the left."""
+    synced = _synced()
+    synced.distance = None
+    fig = figure_motion_and_voltage(synced)
+    labels = [ax.get_ylabel() for ax in fig.axes]
+    left = [ax for ax in fig.axes if ax.yaxis.get_ticks_position() == "left"]
+    plt.close(fig)
+    assert labels == ["Speed (cm/s)", "Induced voltage (mV)"]
+    assert [ax.get_ylabel() for ax in left] == ["Speed (cm/s)"]
 
 
 def test_the_voltage_axis_is_symmetric_so_zero_sits_mid_height():
@@ -199,10 +239,15 @@ def test_a_window_draws_only_that_slice(maker):
     close-up exists to show."""
     synced = _synced_over(10.0)
     fig = maker(synced, window=(4.0, 7.0))
-    ax = fig.axes[0]
-    x0, x1 = ax.get_xlim()
-    spans = [line.get_xdata() for line in ax.get_lines() if len(line.get_xdata()) > 2]
+    x0, x1 = fig.axes[0].get_xlim()
+    spans = [
+        line.get_xdata()
+        for ax in fig.axes
+        for line in ax.get_lines()
+        if len(line.get_xdata()) > 2
+    ]
     plt.close(fig)
+    assert spans, "the figure drew no data at all"
     assert (x0, x1) == pytest.approx((4.0, 7.0), abs=0.05)
     for xs in spans:
         assert xs.min() >= 4.0 and xs.max() <= 7.0

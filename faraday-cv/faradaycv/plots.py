@@ -147,6 +147,39 @@ def _legend_below(ax, handles, y: float = -0.17) -> None:
     )
 
 
+#: Where each extra right-hand axis stands, in points outward from the frame.
+_AXIS_OFFSETS = (34, 96)
+
+
+def _extra_axis(ax, outward: float = 0.0):
+    """A new y axis on its own spine, ``outward`` points clear of the frame.
+
+    Stepping each one out keeps two sets of ticks off the same line and leaves
+    the plot frame itself unpainted by any single series.  Only the base axes
+    draws the grid -- three overlaid grids on three different scales is a
+    moire, not a guide.
+    """
+    twin = ax.twinx()
+    twin.grid(False)
+    twin.patch.set_visible(False)  # so the curves below stay visible
+    twin.spines["right"].set_visible(True)
+    if outward:
+        twin.spines["right"].set_position(("outward", outward))
+    return twin
+
+
+def _own_axis(ax, label: str, color: str) -> None:
+    """Paint an axis in its series' colour, label and spine together.
+
+    With a scale per quantity the reader has to be able to tell at a glance
+    which ticks belong to which curve, and the colour is what says so.
+    """
+    ax.set_ylabel(label, color=color)
+    ax.tick_params(axis="y", colors=color)
+    side = "left" if ax.yaxis.get_ticks_position() == "left" else "right"
+    ax.spines[side].set_color(color)
+
+
 def _mark(ax, t: float, color: str, label: str | None = None) -> None:
     ax.axvline(t, color=color, ls="--", lw=1.0, alpha=0.75, zorder=1, label=label)
 
@@ -191,57 +224,67 @@ def figure_motion_and_voltage(
 ):
     """Fig. 2 -- distance, speed and induced voltage on a common time axis.
 
-    One axes, two scales.  Distance and speed share the left axis -- both are
-    centimetres per something, and drawn together the reader can see that the
-    magnet is fastest halfway between the turning points.  The induced voltage
-    gets the right axis, zero at mid-height because it swings both ways.  That
-    is the whole argument of the experiment in one picture: the green maximum
-    and the red maximum are plainly not at the same instant.
+    One time axis and a y axis per quantity: distance on the left, then speed
+    and the induced voltage on their own spines stepped out to the right, each
+    in its series' colour so there is never a question which ticks belong to
+    which curve.  Three scales let every curve use the full height of the
+    figure, which is what makes the point of the experiment visible -- the
+    speed maximum and the |emf| maximum are plainly not at the same instant.
+
+    The cost of separate scales is that vertical position no longer compares
+    between curves: only the shapes and the timing do.
     """
     stats = summarize(synced)
     sel = _window_mask(synced.t, window)
     t = synced.t[sel]
     speed = synced.speed[sel] * 100  # cm/s
     voltage = synced.voltage[sel] * 1e3  # mV
+    distance = synced.distance[sel] * 100 if synced.distance is not None else None
 
     with plt.rc_context(PAPER_STYLE):
-        fig, ax = plt.subplots(figsize=(8.6, 4.6))
+        fig, ax = plt.subplots(figsize=(9.0, 4.6))
         handles = []
-        top = float(np.nanmax(speed)) if speed.size else 1.0
 
-        if synced.distance is not None:
-            distance = synced.distance[sel] * 100  # cm
+        if distance is not None:
             handles.append(
                 ax.plot(
                     t, distance, color=C_DISTANCE, lw=1.9, label="Distance to coil (cm)"
                 )[0]
             )
-            ax.set_ylabel("Distance (cm) / Speed (cm/s)")
-            top = max(top, float(np.nanmax(distance)))
+            _own_axis(ax, "Distance (cm)", C_DISTANCE)
+            lo, hi = float(np.nanmin(distance)), float(np.nanmax(distance))
+            ax.set_ylim(lo - 0.12 * (hi - lo), hi + 0.12 * (hi - lo))
+            ax_speed = _extra_axis(ax, _AXIS_OFFSETS[0])
         else:
-            ax.set_ylabel("Speed (cm/s)")
+            ax_speed = ax  # nothing to put on the left but the speed itself
+
         # Dotted, not just green: red and green are the one pair a red-green
         # colour blindness flattens, and this is the curve that has to stay
         # apart from the voltage.
         handles.append(
-            ax.plot(
+            ax_speed.plot(
                 t, speed, color=C_SPEED, lw=2.1, ls=":", label="Magnet speed (cm/s)"
             )[0]
         )
+        _own_axis(ax_speed, "Speed (cm/s)", C_SPEED)
+        ax_speed.set_ylim(0, float(np.nanmax(speed)) * 1.08 if speed.size else 1.0)
+
+        ax_volt = _extra_axis(ax, _AXIS_OFFSETS[1] if distance is not None else 0)
+        handles.append(
+            ax_volt.plot(
+                t, voltage, color=C_VOLTAGE, lw=1.9, label="Induced voltage (mV)"
+            )[0]
+        )
+        ax_volt.axhline(0, color="0.6", lw=0.9, zorder=1)
+        _own_axis(ax_volt, "Induced voltage (mV)", C_VOLTAGE)
+        # Symmetric, so the zero line sits at mid-height and a positive half
+        # swing is not drawn larger than the negative one it mirrors.
+        span = float(np.nanmax(np.abs(voltage))) if voltage.size else 1.0
+        ax_volt.set_ylim(-span * 1.08, span * 1.08)
+
         ax.set_xlabel("Time (s)")
         if t.size:
             ax.set_xlim(float(t[0]), float(t[-1]))
-
-        ax2 = ax.twinx()
-        ax2.grid(False)
-        handles.append(
-            ax2.plot(t, voltage, color=C_VOLTAGE, lw=1.9, label="Induced voltage (mV)")[
-                0
-            ]
-        )
-        ax2.axhline(0, color="0.6", lw=0.9, zorder=1)
-        ax2.set_ylabel("Induced voltage (mV)", color=C_VOLTAGE)
-        ax2.tick_params(axis="y", colors=C_VOLTAGE)
 
         if mark_peaks and stats:
             for key, color, label in (
@@ -252,12 +295,6 @@ def figure_motion_and_voltage(
                 if t.size and t[0] <= when <= t[-1]:
                     _mark(ax, when, color, label=label)
                     handles.append(ax.get_lines()[-1])
-
-        ax.set_ylim(0, top * _HEADROOM)
-        # Symmetric, so the zero line sits at mid-height and a positive half
-        # swing is not drawn larger than the negative one it mirrors.
-        span = float(np.nanmax(np.abs(voltage))) if voltage.size else 1.0
-        ax2.set_ylim(-span * _HEADROOM, span * _HEADROOM)
 
         ax.set_title(title or "Distance, Speed, and Induced Voltage vs Time")
         _legend_below(ax, handles)
