@@ -618,16 +618,54 @@ function showResults(result) {
         `<figcaption>${FIGURE_CAPTIONS[f]}</figcaption></figure>`,
     )
     .join("");
+  $("download-error").hidden = true;
   $("downloads").innerHTML = [
     "synced.csv",
     "motion.csv",
     "track.csv",
     "summary.json",
   ]
-    .filter((f) => Object.values(result.files || {}).includes(f))
-    .map((f) => `<a href="${url(f)}" download>${f}</a>`)
+    .filter((f) => written.has(f))
+    .map((f) => `<a href="${url(f)}" data-file="${f}" download>${f}</a>`)
     .join("");
 }
+
+/* Fetch the file rather than letting the browser follow the link, so that a
+   result the server no longer has produces a sentence the reader can act on.
+   Left to itself the browser downloads the JSON error body instead -- and
+   renames it to match, which is where a "synced.json" that will not open
+   comes from. */
+async function downloadResult(href, name) {
+  const problem = $("download-error");
+  problem.hidden = true;
+  try {
+    const response = await fetch(href);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || `the server answered ${response.status}`);
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoking straight away cancels the save in some browsers.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+  } catch (err) {
+    problem.textContent = `${name} could not be downloaded: ${err.message}`;
+    problem.hidden = false;
+  }
+}
+
+$("downloads").addEventListener("click", (event) => {
+  const link = event.target.closest("a[data-file]");
+  if (!link) return;
+  event.preventDefault();
+  downloadResult(link.href, link.dataset.file);
+});
 
 /* ---------------------------------------------------------------- wiring */
 

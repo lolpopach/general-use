@@ -562,3 +562,69 @@ def test_create_app_starts_a_cleanup_sweep_that_can_be_disabled(tmp_path):
     create_app(workdir=tmp_path / "with-sweep", session_ttl_minutes=60)
     names = {t.name for t in threading.enumerate()}
     assert "faraday-cv-cleanup" in names
+
+
+def test_a_second_worker_serves_files_it_never_ran(tmp_path, dataset, truth):
+    """render.yaml starts gunicorn with --workers 2, and the session registry
+    is a dict inside one process.  Downloads are separate requests and land on
+    whichever worker the kernel hands them to, so results have to be readable
+    from the shared filesystem -- otherwise every second download 404s, and
+    the browser saves the JSON error body under a renamed extension.
+    """
+    work = tmp_path / "shared"
+    worker_a = create_app(workdir=work, local_mode=False).test_client()
+    worker_b = create_app(workdir=work, local_mode=False).test_client()
+
+    body = {
+        "track": json.dumps(_fake_track_payload(truth)),
+        "config": json.dumps(
+            {
+                "calibration": {
+                    "mm_per_px": truth["mm_per_px"],
+                    "coil_px": truth["coil_px"],
+                },
+                "t0_video": truth["t0_video_s"],
+            }
+        ),
+        "voltage": (dataset.voltage.open("rb"), "voltage.csv"),
+    }
+    res = worker_a.post("/api/analyze", data=body, content_type="multipart/form-data")
+    sid = res.get_json()["session"]
+
+    for name in ("synced.csv", "motion.csv", "track.csv", "summary.json"):
+        other = worker_b.get(f"/api/session/{sid}/file/{name}")
+        assert other.status_code == 200, f"{name}: {other.get_json()}"
+        assert other.data == worker_a.get(f"/api/session/{sid}/file/{name}").data
+        # and it must arrive as the file it is, not as an error document
+        assert "json" not in other.content_type or name.endswith(".json")
+
+
+def test_a_result_that_is_gone_says_so_instead_of_404ing_silently(client):
+    """A swept or restarted-away run is the one honest failure here, and the
+    page can only explain it if the answer distinguishes it from a bad URL."""
+    res = client.get("/api/session/0123456789ab/file/synced.csv")
+    assert res.status_code == 410
+    assert "run the analysis again" in res.get_json()["error"]
+
+
+@pytest.mark.parametrize(
+    "sid",
+    [
+        "../../../etc",
+        "..",
+        "0123456789ab/../../..",
+        "ZZZZZZZZZZZZ",  # right length, not hex
+        "0123456789abcdef",  # hex, wrong length
+        "",
+    ],
+)
+def test_a_session_id_that_was_never_issued_cannot_reach_the_filesystem(client, sid):
+    res = client.get(f"/api/session/{sid}/file/synced.csv")
+    assert res.status_code in (404, 405), res.status_code
+
+
+def test_only_known_result_names_are_served(client):
+    res = client.get("/api/session/0123456789ab/file/../../../etc/passwd")
+    assert res.status_code in (400, 404)
+    res = client.get("/api/session/0123456789ab/file/secrets.env")
+    assert res.status_code == 400

@@ -416,6 +416,11 @@ td:last-child {
   font-size: 12px;
 }
 
+.note-error {
+  background: #fdecea;
+  border-left-color: var(--warn);
+}
+
 .error {
   color: var(--warn);
   font-weight: 600;

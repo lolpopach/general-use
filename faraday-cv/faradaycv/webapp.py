@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -43,6 +44,9 @@ RESULT_FILES = {
     "fig3_emf_over_velocity_detail.png",
     "diagnostics.png",
 }
+
+#: Every session id this server hands out: ``uuid.uuid4().hex[:12]``.
+_SID = re.compile(r"[0-9a-f]{12}")
 
 #: Track JSON + a CSV log is at most a few MB; this is not a video upload.
 ANALYZE_MAX_BYTES = 64 * 1024**2
@@ -154,6 +158,10 @@ def create_app(
     @app.errorhandler(LocalOnlyError)
     def _local_only(exc):
         return jsonify({"error": str(exc)}), 403
+
+    @app.errorhandler(ResultGoneError)
+    def _result_gone(exc):
+        return jsonify({"error": str(exc)}), 410
 
     @app.get("/")
     def index():
@@ -415,12 +423,24 @@ def create_app(
 
     @app.get("/api/session/<sid>/file/<name>")
     def result_file(sid: str, name: str):
-        session = get_session(sid)
+        """Serve one output file -- from disk, not from the session registry.
+
+        Gunicorn runs this app in more than one worker *process* and the
+        registry above is a plain dict inside one of them, so the worker that
+        answers a download is very often not the worker that ran the analysis:
+        looking the session up here made every second download fail with a
+        404.  The output, though, sits on a filesystem every worker shares, so
+        the path is derived from the sid instead of looked up.
+        """
         if name not in RESULT_FILES:
             raise ValueError(f"unknown result file {name!r}")
-        path = session.outdir / name
+        path = _session_dir(base, sid) / "out" / name
         if not path.exists():
-            raise ValueError(f"{name} has not been produced yet")
+            raise ResultGoneError(
+                f"{name} is no longer on the server. Results are deleted after "
+                "a while and are lost when the server restarts -- run the "
+                "analysis again to get a fresh copy."
+            )
         return send_file(path, max_age=0)
 
     return app
@@ -461,6 +481,22 @@ def _start_cleanup_sweep(base: Path, ttl_minutes: float) -> None:
 
 class LocalOnlyError(Exception):
     """Raised when a local-only feature is hit in a public deployment."""
+
+
+class ResultGoneError(Exception):
+    """Raised when a run's output has been swept, or the server restarted."""
+
+
+def _session_dir(base: Path, sid: str) -> Path:
+    """A run's directory, derived from its id rather than looked up.
+
+    The id is minted here as uuid4 hex, so anything that is not that shape is
+    not an id this server ever issued -- checking it before joining is what
+    keeps a crafted sid from walking out of ``base``.
+    """
+    if not _SID.fullmatch(sid):
+        raise KeyError(sid)
+    return base / sid
 
 
 def _track_config(data: dict, voltage_path: Path | None) -> AnalysisConfig:
