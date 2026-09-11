@@ -229,6 +229,7 @@ def analyse_track(track: Track, cfg: AnalysisConfig) -> AnalysisResult:
 def export_results(result: AnalysisResult, outdir: str | Path) -> dict[str, str]:
     """Write CSVs, figures and summary.json; return the files by short name."""
     from .plots import (
+        detail_window,
         figure_diagnostics,
         figure_emf_over_velocity,
         figure_motion_and_voltage,
@@ -291,6 +292,27 @@ def export_results(result: AnalysisResult, outdir: str | Path) -> dict[str, str]
                 outdir / "fig3_emf_over_velocity.png",
             )
         )
+
+        # A record of ten swings is unreadable at figure width, so it also gets
+        # a three-period close-up around the strongest emf peak -- the window
+        # the paper's own figures use.  Short records skip it: zooming a record
+        # that already fits would just be the same picture twice.
+        zoom = detail_window(s)
+        if zoom is not None:
+            written["fig_motion_voltage_detail"] = str(
+                save_figure(
+                    figure_motion_and_voltage(
+                        s, title=result.config.title, window=zoom
+                    ),
+                    outdir / "fig2_motion_and_voltage_detail.png",
+                )
+            )
+            written["fig_emf_over_v_detail"] = str(
+                save_figure(
+                    figure_emf_over_velocity(s, window=zoom),
+                    outdir / "fig3_emf_over_velocity_detail.png",
+                )
+            )
 
     written["fig_diagnostics"] = str(
         save_figure(

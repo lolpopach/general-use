@@ -88,16 +88,24 @@ PAPER_STYLE = {
     "font.family": font_stack(),
     "mathtext.fontset": "dejavuserif",
     "font.size": 10,
-    "axes.labelsize": 10,
-    "axes.titlesize": 10,
-    "axes.linewidth": 0.8,
-    "axes.spines.top": False,
-    "axes.spines.right": False,
-    "xtick.direction": "in",
-    "ytick.direction": "in",
+    "axes.labelsize": 11,
+    "axes.titlesize": 12,
+    "axes.linewidth": 0.9,
+    "axes.edgecolor": "0.35",
+    "axes.spines.top": True,
+    "axes.spines.right": True,
+    "axes.grid": True,
+    "axes.axisbelow": True,
+    "grid.color": "0.87",
+    "grid.linestyle": "--",
+    "grid.linewidth": 0.7,
+    "xtick.direction": "out",
+    "ytick.direction": "out",
     "xtick.labelsize": 9,
     "ytick.labelsize": 9,
-    "legend.frameon": False,
+    "legend.frameon": True,
+    "legend.edgecolor": "0.8",
+    "legend.framealpha": 0.95,
     "legend.fontsize": 9,
     "lines.linewidth": 1.4,
     "figure.dpi": 120,
@@ -105,133 +113,230 @@ PAPER_STYLE = {
     "savefig.bbox": "tight",
 }
 
-C_DISTANCE = "#1f4e79"
-C_SPEED = "#2e7d32"
-C_VOLTAGE = "#b3261e"
-C_RATIO = "#6a1b9a"
+# Three series on one time axis, and one of them is red: a plain red/green
+# pair is invisible to a deuteranope (CVD delta-E 2.9, well under the 8 the
+# check wants).  The darker green below clears it at 8.3, and the speed curve
+# is dotted on top of that, so identity never rests on hue alone.
+C_DISTANCE = "#1f77b4"
+C_SPEED = "#1b7837"
+C_VOLTAGE = "#e8000b"
+C_RATIO = "#1a4fd6"
+
+#: A little air above the tallest curve, so a peak does not sit on the spine.
+_HEADROOM = 1.12
+
+
+def _legend_below(ax, handles, y: float = -0.17) -> None:
+    """One row of keys under the axes.
+
+    A legend box inside the axes is the usual place for it, but a bipolar
+    signal on a symmetric axis peaks near the top on the right-hand side --
+    exactly where the box goes -- and no amount of stretching the scale moves
+    the peak out from under it (a symmetric axis stretched by r only pushes
+    the peak to 0.5 + 0.5/r).  Below the axes nothing is ever covered.
+    """
+    ax.legend(
+        handles,
+        [h.get_label() for h in handles],
+        loc="upper center",
+        bbox_to_anchor=(0.5, y),
+        ncol=len(handles),
+        frameon=False,
+        columnspacing=1.6,
+        handlelength=2.2,
+    )
 
 
 def _mark(ax, t: float, color: str, label: str | None = None) -> None:
-    ax.axvline(t, color=color, ls="--", lw=0.9, alpha=0.8, zorder=0, label=label)
+    ax.axvline(t, color=color, ls="--", lw=1.0, alpha=0.75, zorder=1, label=label)
+
+
+def _window_mask(t: np.ndarray, window: tuple[float, float] | None):
+    """Index the samples inside ``window``; everything when it is None."""
+    if window is None:
+        return slice(None)
+    lo, hi = window
+    return (t >= lo) & (t <= hi)
+
+
+def detail_window(
+    synced: Synced, seconds: float = 3.0, margin: float = 1.25
+) -> tuple[float, float] | None:
+    """A ``seconds``-long slice around the strongest |emf| peak, or None.
+
+    Ten swings drawn at figure width are a picket fence: the curves cross so
+    often that the one thing the figure exists to show -- that the speed peak
+    and the emf peak fall at different instants -- stops being visible.  The
+    paper's figures show three periods, so a long record gets a second, zoomed
+    copy of each figure.  None means the record is already short enough to be
+    read whole, and no zoom is worth a second file.
+    """
+    t = np.asarray(synced.t, dtype=float)
+    if t.size < 2 or (t[-1] - t[0]) <= seconds * margin:
+        return None
+    centre = float(t[int(np.nanargmax(np.abs(synced.voltage)))])
+    lo, hi = centre - 0.5 * seconds, centre + 0.5 * seconds
+    if lo < t[0]:
+        lo, hi = float(t[0]), float(t[0]) + seconds
+    if hi > t[-1]:
+        lo, hi = float(t[-1]) - seconds, float(t[-1])
+    return (lo, hi)
 
 
 def figure_motion_and_voltage(
     synced: Synced,
     title: str | None = None,
     mark_peaks: bool = True,
+    window: tuple[float, float] | None = None,
 ):
-    """Fig. 2 -- distance, speed and induced voltage on a common time axis."""
+    """Fig. 2 -- distance, speed and induced voltage on a common time axis.
+
+    One axes, two scales.  Distance and speed share the left axis -- both are
+    centimetres per something, and drawn together the reader can see that the
+    magnet is fastest halfway between the turning points.  The induced voltage
+    gets the right axis, zero at mid-height because it swings both ways.  That
+    is the whole argument of the experiment in one picture: the green maximum
+    and the red maximum are plainly not at the same instant.
+    """
     stats = summarize(synced)
+    sel = _window_mask(synced.t, window)
+    t = synced.t[sel]
+    speed = synced.speed[sel] * 100  # cm/s
+    voltage = synced.voltage[sel] * 1e3  # mV
+
     with plt.rc_context(PAPER_STYLE):
-        fig, axes = plt.subplots(3, 1, figsize=(6.5, 6.4), sharex=True)
-        ax_d, ax_v, ax_e = axes
+        fig, ax = plt.subplots(figsize=(8.6, 4.6))
+        handles = []
+        top = float(np.nanmax(speed)) if speed.size else 1.0
 
         if synced.distance is not None:
-            ax_d.plot(synced.t, synced.distance * 1e3, color=C_DISTANCE)
-            ax_d.set_ylabel("distance to coil\n(mm)")
-        else:
-            ax_d.text(
-                0.5,
-                0.5,
-                "no coil position set",
-                ha="center",
-                va="center",
-                transform=ax_d.transAxes,
-                color="0.5",
+            distance = synced.distance[sel] * 100  # cm
+            handles.append(
+                ax.plot(
+                    t, distance, color=C_DISTANCE, lw=1.9, label="Distance to coil (cm)"
+                )[0]
             )
-            ax_d.set_ylabel("distance to coil")
+            ax.set_ylabel("Distance (cm) / Speed (cm/s)")
+            top = max(top, float(np.nanmax(distance)))
+        else:
+            ax.set_ylabel("Speed (cm/s)")
+        # Dotted, not just green: red and green are the one pair a red-green
+        # colour blindness flattens, and this is the curve that has to stay
+        # apart from the voltage.
+        handles.append(
+            ax.plot(
+                t, speed, color=C_SPEED, lw=2.1, ls=":", label="Magnet speed (cm/s)"
+            )[0]
+        )
+        ax.set_xlabel("Time (s)")
+        if t.size:
+            ax.set_xlim(float(t[0]), float(t[-1]))
 
-        ax_v.plot(synced.t, synced.speed, color=C_SPEED)
-        ax_v.set_ylabel("speed\n(m/s)")
-
-        ax_e.plot(synced.t, synced.voltage * 1e3, color=C_VOLTAGE)
-        ax_e.axhline(0, color="0.75", lw=0.7, zorder=0)
-        ax_e.set_ylabel("induced voltage\n(mV)")
-        ax_e.set_xlabel("time (s)")
+        ax2 = ax.twinx()
+        ax2.grid(False)
+        handles.append(
+            ax2.plot(t, voltage, color=C_VOLTAGE, lw=1.9, label="Induced voltage (mV)")[
+                0
+            ]
+        )
+        ax2.axhline(0, color="0.6", lw=0.9, zorder=1)
+        ax2.set_ylabel("Induced voltage (mV)", color=C_VOLTAGE)
+        ax2.tick_params(axis="y", colors=C_VOLTAGE)
 
         if mark_peaks and stats:
-            for ax in axes:
-                _mark(ax, stats["t_max_speed_s"], C_SPEED)
-                _mark(ax, stats["t_max_abs_voltage_s"], C_VOLTAGE)
-            ax_v.annotate(
-                f"max speed\n{stats['t_max_speed_s']:.2f} s",
-                xy=(stats["t_max_speed_s"], stats["max_speed_m_s"]),
-                xytext=(4, -2),
-                textcoords="offset points",
-                color=C_SPEED,
-                fontsize=8,
-                va="top",
-            )
-            ax_e.annotate(
-                f"max |emf|\n{stats['t_max_abs_voltage_s']:.2f} s",
-                xy=(
-                    stats["t_max_abs_voltage_s"],
-                    np.sign(stats["voltage_at_max_speed_mV"] or 1)
-                    * stats["max_abs_voltage_mV"],
-                ),
-                xytext=(4, 0),
-                textcoords="offset points",
-                color=C_VOLTAGE,
-                fontsize=8,
-                va="center",
-            )
+            for key, color, label in (
+                ("t_max_speed_s", C_SPEED, "Peak speed"),
+                ("t_max_abs_voltage_s", C_VOLTAGE, "Peak |emf|"),
+            ):
+                when = stats[key]
+                if t.size and t[0] <= when <= t[-1]:
+                    _mark(ax, when, color, label=label)
+                    handles.append(ax.get_lines()[-1])
 
-        for label, ax in zip("abc", axes):
-            ax.text(
-                -0.13, 1.02, f"({label})", transform=ax.transAxes, fontweight="bold"
-            )
-        if title:
-            fig.suptitle(title, y=0.98)
-        fig.align_ylabels(axes)
+        ax.set_ylim(0, top * _HEADROOM)
+        # Symmetric, so the zero line sits at mid-height and a positive half
+        # swing is not drawn larger than the negative one it mirrors.
+        span = float(np.nanmax(np.abs(voltage))) if voltage.size else 1.0
+        ax2.set_ylim(-span * _HEADROOM, span * _HEADROOM)
+
+        ax.set_title(title or "Distance, Speed, and Induced Voltage vs Time")
+        _legend_below(ax, handles)
         fig.tight_layout()
     return fig
 
 
-def figure_emf_over_velocity(synced: Synced, title: str | None = None):
-    """Fig. 3 -- the induced emf together with E/v (proportional to -N dPhi/dx)."""
-    with plt.rc_context(PAPER_STYLE):
-        fig, ax = plt.subplots(figsize=(6.5, 3.6))
-        ax.plot(synced.t, synced.voltage * 1e3, color=C_VOLTAGE, label=r"$\mathcal{E}$")
-        ax.axhline(0, color="0.75", lw=0.7, zorder=0)
-        ax.set_xlabel("time (s)")
-        ax.set_ylabel(r"induced voltage $\mathcal{E}$ (mV)", color=C_VOLTAGE)
-        ax.tick_params(axis="y", colors=C_VOLTAGE)
+def figure_emf_over_velocity(
+    synced: Synced,
+    title: str | None = None,
+    window: tuple[float, float] | None = None,
+):
+    """Fig. 3 -- the induced emf together with E/v (proportional to -N dPhi/dx).
 
-        ax2 = ax.twinx()
-        ax2.spines["right"].set_visible(True)
-        ax2.plot(
-            synced.t,
-            synced.emf_over_v * 1e3,
-            color=C_RATIO,
-            ls="-",
-            alpha=0.9,
-            label=r"$\mathcal{E}/v$",
-        )
-        ax2.set_ylabel(
-            r"$\mathcal{E}/v \;\propto\; -N\,d\Phi/dx$  (mV$\cdot$s/m)", color=C_RATIO
-        )
-        ax2.tick_params(axis="y", colors=C_RATIO)
+    Both curves on one time axis, each with its own scale: dividing out the
+    speed is supposed to leave the flux gradient behind, and the figure earns
+    its place by letting the reader see how far that holds.
+    """
+    sel = _window_mask(synced.t, window)
+    t = synced.t[sel]
+    voltage = synced.voltage[sel] * 1e3  # mV
+    ratio = synced.emf_over_v[sel] * 10  # (V.s/m) -> mV.s/cm
+    clamped = synced.clamped[sel] if synced.clamped is not None else None
+
+    with plt.rc_context(PAPER_STYLE):
+        fig, ax = plt.subplots(figsize=(8.6, 4.6))
 
         # Shade the turning points, where the floor stands in for v: the curve
         # is continuous there but it is E/v_min, not E/v.  Saying so on the
         # figure is the price of not leaving the trace full of holes.
-        if synced.clamped is not None and synced.clamped.any():
-            _shade_spans(ax, synced.t, synced.clamped)
+        if clamped is not None and clamped.any():
+            _shade_spans(ax, t, clamped)
 
-        handles = ax.get_lines()[:1] + ax2.get_lines()[:1]
-        ax.legend(handles, [h.get_label() for h in handles], loc="upper right")
-        if synced.v_min > 0:
+        line_e = ax.plot(
+            t,
+            voltage,
+            color=C_VOLTAGE,
+            lw=1.9,
+            label=r"Induced voltage $\mathcal{E}$ (mV)",
+        )[0]
+        ax.axhline(0, color="0.6", lw=0.9, zorder=1)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel(r"Induced voltage $\mathcal{E}$ (mV)", color=C_VOLTAGE)
+        ax.tick_params(axis="y", colors=C_VOLTAGE)
+        span = float(np.nanmax(np.abs(voltage))) if voltage.size else 1.0
+        ax.set_ylim(-span * _HEADROOM, span * _HEADROOM)
+        if t.size:
+            ax.set_xlim(float(t[0]), float(t[-1]))
+
+        ax2 = ax.twinx()
+        ax2.grid(False)
+        line_r = ax2.plot(
+            t,
+            ratio,
+            color=C_RATIO,
+            lw=1.9,
+            label=r"$\mathcal{E}/v \;\propto\; -N\,d\Phi/dx$",
+        )[0]
+        ax2.set_ylabel(r"$\mathcal{E}/v$ (mV$\cdot$s/cm)", color=C_RATIO)
+        ax2.tick_params(axis="y", colors=C_RATIO)
+        if np.isfinite(ratio).any():
+            lo, hi = float(np.nanmin(ratio)), float(np.nanmax(ratio))
+            pad = 0.06 * (hi - lo) or 1.0
+            ax2.set_ylim(lo - pad, hi + pad)
+
+        ax.set_title(
+            title or r"Comparison of induced voltage $\mathcal{E}$ and $\mathcal{E}/v$"
+        )
+        _legend_below(ax, [line_e, line_r])
+        if synced.v_min > 0 and clamped is not None and clamped.any():
             ax.text(
-                0.01,
-                0.02,
-                f"shaded: $v < {synced.v_min:.3f}$ m/s, where $v$ is held at that "
-                "floor so $\\mathcal{E}/v$ stays finite",
+                0.0,
+                -0.34,
+                f"Shaded: turning points where $v < {synced.v_min * 100:.1f}$ cm/s; "
+                r"there $v$ is held at that floor so $\mathcal{E}/v$ stays finite.",
                 transform=ax.transAxes,
-                fontsize=8,
-                color="0.4",
+                fontsize=8.5,
+                color="0.40",
             )
-        if title:
-            ax.set_title(title)
         fig.tight_layout()
     return fig
 
@@ -267,6 +372,7 @@ def figure_diagnostics(track: Track, led_threshold: float | None = None):
         axes[0].plot(track.t, track.x, ".", ms=3, color=C_DISTANCE, label="x (px)")
         axes[0].plot(track.t, track.y, ".", ms=3, color=C_SPEED, label="y (px)")
         axes[0].set_ylabel("centroid (px)")
+        axes[0].margins(y=0.28)  # keep the legend off the traces
         axes[0].legend(loc="upper right", ncol=2)
 
         axes[1].plot(track.t, track.area, color="0.35")

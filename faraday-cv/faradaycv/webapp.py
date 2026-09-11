@@ -38,7 +38,9 @@ RESULT_FILES = {
     "synced.csv",
     "summary.json",
     "fig2_motion_and_voltage.png",
+    "fig2_motion_and_voltage_detail.png",
     "fig3_emf_over_velocity.png",
+    "fig3_emf_over_velocity_detail.png",
     "diagnostics.png",
 }
 

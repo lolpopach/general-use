@@ -103,6 +103,11 @@ def test_export_writes_every_figure_and_table(result, tmp_path):
     rows = Path(written["synced_csv"]).read_text().splitlines()[1:]
     assert len(rows) == len(result.synced)
 
+    # This record is three seconds long, so a "three periods around the emf
+    # peak" close-up would be the same picture again -- it must be skipped.
+    assert "fig_motion_voltage_detail" not in written
+    assert "fig_emf_over_v_detail" not in written
+
     summary = json.loads(Path(written["summary"]).read_text())
     assert summary["led_frame"] == result.led_frame
     assert summary["stats"]["max_abs_voltage_mV"] == pytest.approx(
@@ -190,3 +195,27 @@ def test_an_led_that_was_already_lit_is_diagnosed_specifically(tmp_path, truth):
     out = run_analysis(cfg)
     assert out.led_frame is None
     assert any("already" in note for note in out.notes)
+
+
+def test_a_long_record_also_gets_the_close_up_figures(dataset, truth, tmp_path):
+    """Ten swings drawn at figure width are a picket fence, so a long record
+    gets a second, zoomed copy of each figure -- the window the paper uses."""
+    from faradaycv.synthetic import SyntheticSpec, make_dataset
+
+    ds = make_dataset(tmp_path / "long", SyntheticSpec(duration_s=8.0))
+    cfg = AnalysisConfig(
+        video=str(ds.video),
+        voltage=str(ds.voltage),
+        color=MAGNET,
+        segment=SegmentConfig(min_area=60),
+        calibration=Calibration(
+            mm_per_px=ds.ground_truth["mm_per_px"],
+            coil_px=tuple(ds.ground_truth["coil_px"]),
+        ),
+        led_roi=tuple(ds.ground_truth["led_roi"]),
+    )
+    written = export_results(run_analysis(cfg), tmp_path / "out")
+    for key in ("fig_motion_voltage_detail", "fig_emf_over_v_detail"):
+        assert Path(written[key]).stat().st_size > 1000, key
+    # and the whole-record copies are still there beside them
+    assert Path(written["fig_motion_voltage"]).exists()

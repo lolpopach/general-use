@@ -552,16 +552,34 @@ $("run").addEventListener("click", async () => {
   }
 });
 
+/* label, displayed unit, factor from the SI-named key to that unit. The
+   figures are drawn in cm and cm/s (the units the paper uses), so the table
+   beside them reads in the same ones -- the CSVs stay metres and m/s. */
 const STAT_LABELS = {
-  t_max_speed_s: ["Time of peak speed", "s"],
-  max_speed_m_s: ["Peak speed", "m/s"],
-  t_max_abs_voltage_s: ["Time of peak |voltage|", "s"],
-  max_abs_voltage_mV: ["Peak |voltage|", "mV"],
-  speed_at_max_voltage_m_s: ["Speed at peak voltage", "m/s"],
-  voltage_at_max_speed_mV: ["Voltage at peak speed", "mV"],
-  peak_separation_s: ["Separation between the two peaks", "s"],
-  distance_at_max_voltage_mm: ["Distance at peak voltage", "mm"],
-  min_distance_mm: ["Minimum distance", "mm"],
+  t_max_speed_s: ["Time of peak speed", "s", 1],
+  max_speed_m_s: ["Peak speed", "cm/s", 100],
+  t_max_abs_voltage_s: ["Time of peak |voltage|", "s", 1],
+  max_abs_voltage_mV: ["Peak |voltage|", "mV", 1],
+  speed_at_max_voltage_m_s: ["Speed at peak voltage", "cm/s", 100],
+  voltage_at_max_speed_mV: ["Voltage at peak speed", "mV", 1],
+  peak_separation_s: ["Separation between the two peaks", "s", 1],
+  distance_at_max_voltage_mm: ["Distance at peak voltage", "cm", 0.1],
+  min_distance_mm: ["Minimum distance", "cm", 0.1],
+};
+
+const FIGURE_CAPTIONS = {
+  "fig2_motion_and_voltage_detail.png":
+    "Fig. 2 — distance, speed and induced voltage, three periods around the " +
+    "strongest emf peak.",
+  "fig2_motion_and_voltage.png":
+    "Fig. 2 (whole record) — distance, speed and induced voltage vs time.",
+  "fig3_emf_over_velocity_detail.png":
+    "Fig. 3 — induced voltage ℰ and ℰ/v, the same window as Fig. 2.",
+  "fig3_emf_over_velocity.png":
+    "Fig. 3 (whole record) — induced voltage ℰ and ℰ/v ∝ −N dΦ/dx.",
+  "diagnostics.png":
+    "Diagnostics — centroid, blob area and the LED trace. Check these before " +
+    "trusting the figures above.",
 };
 
 function showResults(result) {
@@ -569,8 +587,10 @@ function showResults(result) {
   const rows = Object.entries(STAT_LABELS)
     .filter(([key]) => result.stats && result.stats[key] !== undefined)
     .map(
-      ([key, [label, unit]]) =>
-        `<tr><td>${label}</td><td>${result.stats[key].toFixed(3)} ${unit}</td></tr>`,
+      ([key, [label, unit, factor]]) =>
+        `<tr><td>${label}</td><td>${(result.stats[key] * factor).toFixed(
+          unit === "s" ? 3 : 2,
+        )} ${unit}</td></tr>`,
     );
   rows.push(
     `<tr><td>Detection rate</td><td>${(result.detection_rate * 100).toFixed(1)} %</td></tr>`,
@@ -587,14 +607,16 @@ function showResults(result) {
 
   const stamp = Date.now();
   const url = (name) => `/api/session/${state.sid}/file/${name}?t=${stamp}`;
-  const figures = [
-    "fig2_motion_and_voltage.png",
-    "fig3_emf_over_velocity.png",
-    "diagnostics.png",
-  ];
-  $("figures").innerHTML = figures
-    .filter((f) => Object.values(result.files || {}).includes(f))
-    .map((f) => `<img src="${url(f)}" alt="${f}">`)
+  // Close-ups first: on a record of several swings they are the readable
+  // ones, and the whole-record copies below them are the context.
+  const written = new Set(Object.values(result.files || {}));
+  $("figures").innerHTML = Object.keys(FIGURE_CAPTIONS)
+    .filter((f) => written.has(f))
+    .map(
+      (f) =>
+        `<figure><img src="${url(f)}" alt="${FIGURE_CAPTIONS[f]}">` +
+        `<figcaption>${FIGURE_CAPTIONS[f]}</figcaption></figure>`,
+    )
     .join("");
   $("downloads").innerHTML = [
     "synced.csv",

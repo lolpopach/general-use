@@ -12,6 +12,7 @@ from faradaycv.analysis import Synced
 from faradaycv.plots import (
     PAPER_STYLE,
     _shade_spans,
+    detail_window,
     figure_emf_over_velocity,
     figure_motion_and_voltage,
     font_stack,
@@ -46,7 +47,13 @@ def test_shading_marks_exactly_the_runs_it_is_given(mask, expected):
 
 
 def _synced(n=200):
-    t = np.linspace(0, 2, n)
+    return _synced_over(2.0, n)
+
+
+def _synced_over(duration, n=None):
+    """A swinging record of any length, so the close-up rules can be tested."""
+    n = n if n is not None else int(200 * duration)
+    t = np.linspace(0, duration, n)
     speed = 0.5 * np.abs(np.sin(2 * np.pi * t))
     voltage = 0.01 * np.sin(4 * np.pi * t)
     return Synced(
@@ -88,11 +95,114 @@ def test_figures_save_at_publication_size(tmp_path):
     assert not plt.get_fignums(), "save_figure must close the figure it wrote"
 
 
-def test_a_run_without_a_coil_still_draws_the_other_panels(tmp_path):
+def test_a_run_without_a_coil_still_draws_speed_and_voltage():
+    """No coil clicked means no distance curve -- but the two series that do
+    not need one must still be drawn, and the axis must not promise a distance
+    it is not showing."""
     synced = _synced()
     synced.distance = None
     fig = figure_motion_and_voltage(synced)
     labels = [ax.get_ylabel() for ax in fig.axes]
     plt.close(fig)
-    assert any("speed" in label for label in labels)
-    assert any("voltage" in label for label in labels)
+    assert "Speed (cm/s)" in labels
+    assert "Induced voltage (mV)" in labels
+    assert not any("Distance" in label for label in labels)
+
+
+def test_the_axes_are_the_papers_units_not_si():
+    """The figures replace the paper's, so they carry the paper's units --
+    centimetres and millivolts.  Drifting back to mm/(m/s) would make every
+    number on the figure disagree with the text around it."""
+    synced = _synced()
+    fig = figure_motion_and_voltage(synced)
+    labels = [ax.get_ylabel() for ax in fig.axes]
+    ax = fig.axes[0]
+    drawn = ax.get_lines()[0].get_ydata()
+    plt.close(fig)
+    assert "Distance (cm) / Speed (cm/s)" in labels
+    assert np.allclose(drawn, synced.distance * 100)
+
+
+def test_the_voltage_axis_is_symmetric_so_zero_sits_mid_height():
+    """A bipolar signal drawn on a lopsided axis reads as though one half
+    swing were bigger than the other."""
+    synced = _synced()
+    fig = figure_motion_and_voltage(synced)
+    right = [ax for ax in fig.axes if ax.get_ylabel() == "Induced voltage (mV)"][0]
+    lo, hi = right.get_ylim()
+    plt.close(fig)
+    assert lo == pytest.approx(-hi)
+
+
+def test_the_legend_sits_below_the_axes_where_it_covers_nothing():
+    """An opaque legend box inside the axes hides exactly the peak the reader
+    came for, and a symmetric voltage axis cannot be stretched far enough to
+    get out from under it -- so it has to live below the frame."""
+    fig = figure_motion_and_voltage(_synced())
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    legend = ax.get_legend()
+    labels = [text.get_text() for text in legend.get_texts()]
+    box = legend.get_window_extent()
+    frame = ax.get_window_extent()
+    plt.close(fig)
+    assert box.y1 <= frame.y0, "the legend overlaps the plotting area"
+    assert "Magnet speed (cm/s)" in labels
+
+
+@pytest.mark.parametrize(
+    "duration, expected",
+    [
+        (2.0, None),  # shorter than one window: nothing to zoom into
+        (3.0, None),  # still inside the margin
+        (10.0, "window"),
+    ],
+)
+def test_a_long_record_asks_for_a_close_up_and_a_short_one_does_not(duration, expected):
+    synced = _synced_over(duration)
+    got = detail_window(synced, seconds=3.0)
+    if expected is None:
+        assert got is None
+        return
+    lo, hi = got
+    assert hi - lo == pytest.approx(3.0)
+    assert lo >= synced.t[0] and hi <= synced.t[-1]
+    # centred on the strongest emf peak, which is what the window is for
+    peak = synced.t[int(np.argmax(np.abs(synced.voltage)))]
+    assert lo <= peak <= hi
+
+
+def test_a_close_up_near_the_start_is_pushed_inside_the_record():
+    """argmax at the first sample would otherwise ask for a window that
+    begins before the record does."""
+    synced = _synced_over(10.0)
+    synced.voltage = np.zeros_like(synced.voltage)
+    synced.voltage[0] = 1.0  # peak at the very first sample
+    lo, hi = detail_window(synced, seconds=3.0)
+    assert lo == pytest.approx(synced.t[0])
+    assert hi == pytest.approx(synced.t[0] + 3.0)
+
+
+def test_a_close_up_near_the_end_is_pushed_inside_the_record():
+    synced = _synced_over(10.0)
+    synced.voltage = np.zeros_like(synced.voltage)
+    synced.voltage[-1] = 1.0
+    lo, hi = detail_window(synced, seconds=3.0)
+    assert hi == pytest.approx(synced.t[-1])
+    assert lo == pytest.approx(synced.t[-1] - 3.0)
+
+
+@pytest.mark.parametrize("maker", [figure_motion_and_voltage, figure_emf_over_velocity])
+def test_a_window_draws_only_that_slice(maker):
+    """The close-up has to actually cut the data, not just rescale the axes --
+    an autoscaled y on the whole record would flatten the very peaks the
+    close-up exists to show."""
+    synced = _synced_over(10.0)
+    fig = maker(synced, window=(4.0, 7.0))
+    ax = fig.axes[0]
+    x0, x1 = ax.get_xlim()
+    spans = [line.get_xdata() for line in ax.get_lines() if len(line.get_xdata()) > 2]
+    plt.close(fig)
+    assert (x0, x1) == pytest.approx((4.0, 7.0), abs=0.05)
+    for xs in spans:
+        assert xs.min() >= 4.0 and xs.max() <= 7.0
