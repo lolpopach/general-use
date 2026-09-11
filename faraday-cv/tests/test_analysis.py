@@ -105,16 +105,45 @@ def test_synchronize_refuses_records_that_do_not_overlap():
         synchronize(motion, log)
 
 
-def test_emf_over_v_is_hidden_where_the_magnet_is_nearly_stopped():
+def test_emf_over_v_holds_the_denominator_at_a_floor_near_the_turning_points():
+    """E/v runs away as v -> 0, so v is floored rather than the sample dropped.
+
+    The floor keeps the curve continuous and bounded; it is only the ratio that
+    needs it. The speed itself is left alone, because a pendulum really does
+    stop at its turning points and the speed plot should say so.
+    """
     motion = build_motion(_fake_track(), Calibration(mm_per_px=1000.0, smooth_window=0))
     t = np.linspace(0, 0.9, 200)
     log = VoltageLog(t=t, v=np.full_like(t, 0.01))
     synced = synchronize(motion, log, v_min=None, v_min_fraction=0.5)
 
-    slow = synced.speed <= synced.v_min
-    assert slow.any() and np.isnan(synced.emf_over_v[slow]).all()
-    fast = synced.speed > synced.v_min
+    slow = synced.speed < synced.v_min
+    assert slow.any(), "the fixture should dip below the floor somewhere"
+    assert np.isfinite(synced.emf_over_v).all(), "no holes left in the curve"
+    assert np.array_equal(synced.clamped, slow)
+
+    # below the floor the ratio saturates at E/v_min ...
+    assert np.allclose(synced.emf_over_v[slow], 0.01 / synced.v_min)
+    # ... and above it the value is exact
+    fast = ~slow
     assert np.allclose(synced.emf_over_v[fast], 0.01 / synced.speed[fast])
+    # the floor bounds the whole trace, which is the point of having one
+    assert np.abs(synced.emf_over_v).max() == pytest.approx(0.01 / synced.v_min)
+
+    # and the speed itself is untouched -- it still reaches its true minimum
+    assert synced.speed.min() < synced.v_min
+
+
+def test_asking_for_no_floor_keeps_the_exact_ratio_and_divides_nothing_by_zero():
+    motion = build_motion(_fake_track(), Calibration(mm_per_px=1000.0, smooth_window=0))
+    t = np.linspace(0, 0.9, 200)
+    log = VoltageLog(t=t, v=np.full_like(t, 0.01))
+    synced = synchronize(motion, log, v_min=0.0)
+
+    assert not synced.clamped.any()
+    moving = synced.speed > 0
+    assert np.allclose(synced.emf_over_v[moving], 0.01 / synced.speed[moving])
+    assert np.isnan(synced.emf_over_v[~moving]).all()
 
 
 def _fake_track():

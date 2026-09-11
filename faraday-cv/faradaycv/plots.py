@@ -212,13 +212,20 @@ def figure_emf_over_velocity(synced: Synced, title: str | None = None):
         )
         ax2.tick_params(axis="y", colors=C_RATIO)
 
+        # Shade the turning points, where the floor stands in for v: the curve
+        # is continuous there but it is E/v_min, not E/v.  Saying so on the
+        # figure is the price of not leaving the trace full of holes.
+        if synced.clamped is not None and synced.clamped.any():
+            _shade_spans(ax, synced.t, synced.clamped)
+
         handles = ax.get_lines()[:1] + ax2.get_lines()[:1]
         ax.legend(handles, [h.get_label() for h in handles], loc="upper right")
         if synced.v_min > 0:
             ax.text(
                 0.01,
                 0.02,
-                f"$\\mathcal{{E}}/v$ hidden where $v < {synced.v_min:.3f}$ m/s",
+                f"shaded: $v < {synced.v_min:.3f}$ m/s, where $v$ is held at that "
+                "floor so $\\mathcal{E}/v$ stays finite",
                 transform=ax.transAxes,
                 fontsize=8,
                 color="0.4",
@@ -227,6 +234,23 @@ def figure_emf_over_velocity(synced: Synced, title: str | None = None):
             ax.set_title(title)
         fig.tight_layout()
     return fig
+
+
+def _shade_spans(ax, t: np.ndarray, mask: np.ndarray) -> None:
+    """Shade every run of True in `mask` as a band on `ax`.
+
+    Bands are widened by half a sample at each end so that a run of a single
+    sample -- which a turning point often is -- is still wide enough to see.
+    """
+    mask = np.asarray(mask, bool)
+    if not mask.any():
+        return
+    edges = np.diff(np.r_[False, mask, False].astype(np.int8))
+    starts = np.flatnonzero(edges == 1)
+    ends = np.flatnonzero(edges == -1) - 1  # index of the last True in the run
+    half = 0.5 * float(np.median(np.diff(t))) if t.size > 1 else 0.0
+    for a, b in zip(starts, ends):
+        ax.axvspan(t[a] - half, t[b] + half, color="0.88", zorder=0, lw=0)
 
 
 def figure_diagnostics(track: Track, led_threshold: float | None = None):

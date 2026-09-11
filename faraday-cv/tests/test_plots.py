@@ -11,12 +11,38 @@ import pytest
 from faradaycv.analysis import Synced
 from faradaycv.plots import (
     PAPER_STYLE,
+    _shade_spans,
     figure_emf_over_velocity,
     figure_motion_and_voltage,
     font_stack,
     needs_cjk_font,
     save_figure,
 )
+
+
+@pytest.mark.parametrize(
+    "mask, expected",
+    [
+        ([0, 0, 1, 1, 1, 0, 0], [(1.5, 4.5)]),
+        ([1, 1, 0, 0, 1, 1, 0], [(-0.5, 1.5), (3.5, 5.5)]),  # run at the start
+        ([0, 0, 1, 1, 0, 1, 1], [(1.5, 3.5), (4.5, 6.5)]),  # run at the end
+        ([1, 1, 1, 1, 1, 1, 1], [(-0.5, 6.5)]),
+        ([0, 0, 0, 1, 0, 0, 0], [(2.5, 3.5)]),  # one sample must still show
+        ([1, 0, 1, 0, 1, 0, 1], [(-0.5, 0.5), (1.5, 2.5), (3.5, 4.5), (5.5, 6.5)]),
+        ([0, 0, 0, 0, 0, 0, 0], []),
+    ],
+)
+def test_shading_marks_exactly_the_runs_it_is_given(mask, expected):
+    """The floored stretches are marked on the figure, so the shading has to
+    land on the right samples -- an off-by-one here mislabels which points are
+    E/v and which are E/v_min."""
+    fig, ax = plt.subplots()
+    try:
+        _shade_spans(ax, np.arange(7, dtype=float), np.array(mask, bool))
+        got = [(p.get_x(), p.get_x() + p.get_width()) for p in ax.patches]
+        assert [(pytest.approx(a), pytest.approx(b)) for a, b in got] == expected
+    finally:
+        plt.close(fig)
 
 
 def _synced(n=200):

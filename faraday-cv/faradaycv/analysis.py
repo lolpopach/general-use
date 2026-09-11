@@ -185,6 +185,10 @@ class Synced:
     distance: np.ndarray | None  # m
     emf_over_v: np.ndarray  # V / (m/s)
     v_min: float
+    #: True where the speed was below ``v_min`` and the floor stood in for it,
+    #: so ``emf_over_v`` there is E/v_min, not E/v.  The speed panel keeps the
+    #: real speed; only this derived ratio needs the floor to stay finite.
+    clamped: np.ndarray | None = None
     notes: list[str] = field(default_factory=list)
 
     def __len__(self) -> int:
@@ -227,9 +231,20 @@ def synchronize(
     if v_min is None:
         peak = float(np.nanmax(speed)) if speed.size else 0.0
         v_min = v_min_fraction * peak
-    ratio = np.full_like(voltage, np.nan)
-    fast = speed > v_min
-    ratio[fast] = voltage[fast] / speed[fast]
+
+    # E/v is exact wherever the magnet is moving; it only misbehaves as v -> 0
+    # at the turning points, where the ratio runs away.  Rather than drop those
+    # samples and leave the curve full of holes, hold the *denominator* at a
+    # floor so the trace stays continuous and bounded.  The floor is recorded
+    # in `clamped` because the values under it are E/v_min, not E/v.
+    clamped = speed < v_min if v_min > 0 else np.zeros(speed.shape, bool)
+    if v_min > 0:
+        ratio = voltage / np.maximum(speed, v_min)
+    else:
+        # no floor asked for: the only thing that cannot be divided is zero
+        ratio = np.full_like(voltage, np.nan)
+        moving = speed > 0
+        ratio[moving] = voltage[moving] / speed[moving]
 
     notes = list(m.notes)
     overlap = hi - lo
@@ -242,6 +257,7 @@ def synchronize(
         distance=distance,
         emf_over_v=ratio,
         v_min=float(v_min),
+        clamped=clamped,
         notes=notes,
     )
 

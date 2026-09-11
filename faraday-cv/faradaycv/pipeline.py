@@ -268,6 +268,10 @@ def export_results(result: AnalysisResult, outdir: str | Path) -> dict[str, str]
         s = result.synced
         names = ["t_s", "voltage_V", "speed_m_s", "emf_over_v_Vs_per_m"]
         cols = [s.t, s.voltage, s.speed, s.emf_over_v]
+        if s.clamped is not None:
+            # 1 where v was held at the floor, so E/v there is E/v_min
+            names.append("emf_over_v_floored")
+            cols.append(s.clamped.astype(int))
         if s.distance is not None:
             names.insert(3, "distance_m")
             cols.insert(3, s.distance)
