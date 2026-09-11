@@ -101,10 +101,7 @@ def smooth(values: np.ndarray, window: int, poly: int = 2) -> np.ndarray:
     n = values.size
     if window is None or window < 3 or n < 5:
         return values
-    win = int(window)
-    if win % 2 == 0:
-        win += 1
-    win = min(win, n if n % 2 == 1 else n - 1)
+    win = _odd_window(window, n)
     if win < 3:
         return values
     order = min(poly, win - 1)
@@ -113,27 +110,83 @@ def smooth(values: np.ndarray, window: int, poly: int = 2) -> np.ndarray:
     return savgol_filter(values, win, order)
 
 
+def derivative(values: np.ndarray, t: np.ndarray, window: int, poly: int = 2):
+    """d(values)/dt, fitted rather than differenced.
+
+    ``np.gradient`` divides a two-frame difference by that frame's own dt, so
+    it amplifies two things the video cannot help: the pixel quantisation of
+    the centroid, and any wobble in the frame timestamps.  Phone video wobbles
+    -- the browser reports real presentation times, and a variable frame rate
+    means neighbouring frames are genuinely 28 ms and 38 ms apart, which on a
+    difference reads as a 30 % change in speed that never happened.  Worse, a
+    decoder that hands back two frames a millisecond apart makes the quotient
+    explode.
+
+    A Savitzky-Golay derivative fits a short polynomial across the window and
+    differentiates that, which has the same bandwidth without the
+    amplification.  It needs a uniform grid, so on an uneven clock the
+    positions are resampled to the median frame interval, differentiated
+    there, and the velocity interpolated back onto the real timestamps.
+    """
+    values = np.asarray(values, dtype=float)
+    t = np.asarray(t, dtype=float)
+    if t.size < 5 or window is None or window < 3:
+        return np.gradient(values, t) if t.size >= 2 else np.zeros_like(values)
+
+    dt = np.diff(t)
+    step = float(np.median(dt))
+    if step <= 0:
+        return np.gradient(values, t)
+
+    from scipy.signal import savgol_filter
+
+    win = _odd_window(window, t.size)
+    if win < 3:
+        return np.gradient(values, t)
+    order = min(poly, win - 1)
+
+    if np.all(np.abs(dt - step) <= 0.02 * step):  # already an even clock
+        return savgol_filter(values, win, order, deriv=1, delta=step)
+
+    grid = np.arange(float(t[0]), float(t[-1]) + 0.5 * step, step)
+    if grid.size < win:
+        return np.gradient(values, t)
+    on_grid = np.interp(grid, t, values)
+    return np.interp(t, grid, savgol_filter(on_grid, win, order, deriv=1, delta=step))
+
+
+def _odd_window(window: int, n: int) -> int:
+    """The Savitzky-Golay window, clamped to what the sample count allows."""
+    win = int(window)
+    if win % 2 == 0:
+        win += 1
+    win = min(win, n if n % 2 == 1 else n - 1)
+    return win
+
+
 def build_motion(track: Track, calib: Calibration) -> Motion:
-    """Pixels -> metres, gaps filled, positions smoothed, velocity by gradient.
+    """Pixels -> metres, gaps filled, positions smoothed, velocity fitted.
 
     Differentiating raw centroids amplifies the +-0.5 px quantisation of the
-    segmentation, so positions are smoothed *before* the derivative is taken.
+    segmentation, so positions are smoothed before they are reported, and the
+    velocity comes from :func:`derivative` rather than a finite difference.
     """
     scale = calib.mm_per_px * 1e-3  # metres per pixel
-    x_px = smooth(fill_gaps(track.x), calib.smooth_window, calib.smooth_poly)
-    y_px = smooth(fill_gaps(track.y), calib.smooth_window, calib.smooth_poly)
+    x_filled = fill_gaps(track.x)
+    y_filled = fill_gaps(track.y)
+    x_px = smooth(x_filled, calib.smooth_window, calib.smooth_poly)
+    y_px = smooth(y_filled, calib.smooth_window, calib.smooth_poly)
 
     ox, oy = calib.origin_px if calib.origin_px else (0.0, 0.0)
     x_m = (x_px - ox) * scale
     y_m = -(y_px - oy) * scale  # image y grows downward; physics y grows up
 
     t = np.asarray(track.t, dtype=float)
-    if t.size >= 2:
-        vx = np.gradient(x_m, t)
-        vy = np.gradient(y_m, t)
-    else:
-        vx = np.zeros_like(x_m)
-        vy = np.zeros_like(y_m)
+    # The fit below does its own smoothing, so it runs on the filled positions
+    # rather than the already-smoothed ones -- smoothing twice would flatten
+    # the very peaks the figures are about.
+    vx = derivative(x_filled * scale, t, calib.smooth_window, calib.smooth_poly)
+    vy = derivative(-y_filled * scale, t, calib.smooth_window, calib.smooth_poly)
     speed = np.hypot(vx, vy)
 
     distance = None
@@ -157,7 +210,23 @@ def build_motion(track: Track, calib: Calibration) -> Motion:
         motion.notes.append(
             "no length calibration given -- distances are in pixels, not metres"
         )
+    spread = _clock_spread(t)
+    if spread > 0.25:
+        motion.notes.append(
+            f"the video's frame times are uneven -- the gaps between frames vary by "
+            f"{spread:.0%} about the median. The speed was fitted on an even clock so "
+            "that does not wreck it, but a steadier recording would measure it better"
+        )
     return motion
+
+
+def _clock_spread(t: np.ndarray) -> float:
+    """Worst frame-interval deviation from the median, as a fraction of it."""
+    if t.size < 3:
+        return 0.0
+    dt = np.diff(t)
+    step = float(np.median(dt))
+    return float(np.max(np.abs(dt - step)) / step) if step > 0 else 0.0
 
 
 def shift_motion(motion: Motion, t0: float) -> Motion:

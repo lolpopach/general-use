@@ -162,3 +162,102 @@ def _fake_track():
         found=np.ones(31, bool),
         info=VideoInfo("fake", 30.0, 31, 640, 480),
     )
+
+
+def _wobbly_clock(n=240, jitter=0.30, seed=3):
+    """Frame times of a variable-frame-rate phone clip: the nominal interval,
+    wobbling by ``jitter``, with one pair of near-duplicate frames."""
+    rng = np.random.default_rng(seed)
+    step = 1 / 30.0
+    t = np.cumsum(np.r_[0.0, rng.normal(step, jitter * step, n - 1)])
+    t[n // 2] = t[n // 2 - 1] + 0.001  # a decoder handing back a repeat
+    return np.maximum.accumulate(t) + np.arange(n) * 1e-7
+
+
+def _swinging_track(t):
+    """x = 0.5 sin(2 pi t) metres, sampled at the times given."""
+    from faradaycv.video import Track, VideoInfo
+
+    return Track(
+        frame=np.arange(t.size),
+        t=t,
+        x=0.5 * np.sin(2 * np.pi * t) * 1000,  # mm, so mm_per_px=1 gives metres
+        y=np.zeros_like(t),
+        area=np.full(t.size, 100.0),
+        found=np.ones(t.size, bool),
+        info=VideoInfo("swing", 30.0, t.size, 640, 480),
+    )
+
+
+def test_speed_survives_a_video_whose_frame_times_wobble():
+    """A phone clip's frames are not evenly spaced, and a two-frame difference
+    divided by that frame's own dt turns the wobble into speed that was never
+    there -- a 1 ms gap between two frames sends it to infinity.
+
+    What is measured here is the *extra* error the wobble causes: a short
+    fitting window costs a few percent on a sinusoid whatever the clock does,
+    and the uneven clock must not add meaningfully to that.
+    """
+    calib = Calibration(mm_per_px=1.0, smooth_window=7)
+    inner = slice(6, -6)  # the fit is one-sided at the very ends
+
+    def error(t):
+        truth = np.pi * np.abs(np.cos(2 * np.pi * t))
+        speed = build_motion(_swinging_track(t), calib).speed
+        return float(np.max(np.abs(speed[inner] - truth[inner]))), speed
+
+    even, _ = error(np.arange(240) / 30.0)
+    wobbly, speed = error(_wobbly_clock())
+
+    assert wobbly < even + 0.05, (
+        f"the uneven clock added {wobbly - even:.3f} m/s of error "
+        f"(even clock {even:.3f}, wobbly {wobbly:.3f})"
+    )
+    # and no spike: a 1 ms gap must not blow the quotient up
+    assert speed.max() < 1.3 * np.pi, f"peak speed {speed.max():.2f} m/s is a spike"
+    assert any(
+        "frame times are uneven" in note
+        for note in build_motion(_swinging_track(_wobbly_clock()), calib).notes
+    )
+
+
+def test_an_even_clock_is_not_reported_as_uneven():
+    from faradaycv.video import Track, VideoInfo
+
+    t = np.arange(200) / 30.0
+    track = Track(
+        frame=np.arange(t.size),
+        t=t,
+        x=np.sin(2 * np.pi * t) * 1000,
+        y=np.zeros_like(t),
+        area=np.full(t.size, 100.0),
+        found=np.ones(t.size, bool),
+        info=VideoInfo("even", 30.0, t.size, 640, 480),
+    )
+    motion = build_motion(track, Calibration(mm_per_px=1.0, smooth_window=7))
+    assert not any("uneven" in note for note in motion.notes)
+
+
+def test_pixel_jitter_does_not_reach_the_speed_as_a_ripple():
+    """Centroids land on a fraction of a pixel; differencing them frame to
+    frame turns that into a visible sawtooth on the speed curve."""
+    from faradaycv.video import Track, VideoInfo
+
+    rng = np.random.default_rng(4)
+    t = np.arange(300) / 30.0
+    clean = 0.5 * np.sin(2 * np.pi * t) * 1000
+    common = dict(
+        frame=np.arange(t.size),
+        y=np.zeros_like(t),
+        area=np.full(t.size, 100.0),
+        found=np.ones(t.size, bool),
+        info=VideoInfo("jittery", 30.0, t.size, 640, 480),
+    )
+    calib = Calibration(mm_per_px=1.0, smooth_window=7)
+    smoothness = []
+    for noise in (0.0, 2.0):
+        track = Track(t=t, x=clean + rng.normal(0, noise, t.size), **common)
+        speed = build_motion(track, calib).speed
+        smoothness.append(float(np.mean(np.abs(np.diff(speed, 2)))))
+    quiet, noisy = smoothness
+    assert noisy < quiet + 0.02, f"2 px of jitter added {noisy - quiet:.3f} of wiggle"
