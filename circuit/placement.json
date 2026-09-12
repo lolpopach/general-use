@@ -1,0 +1,29 @@
+{
+  "_note": "Coordinates are in pixels of base.png, top-left origin. The values below are eyeballed from the posted screenshot and WILL need adjusting once the real base.png is in place - run assemble.py, look at the PNG, nudge, repeat.",
+  "title": "Arduino UNO + solenoid + ADS1115",
+  "base": "base.png",
+
+  "_background_tile": "A rectangle of base.png containing nothing but clean graph-paper grid. It gets tiled into the cover rectangles so the grid keeps running. Pick a whole number of grid squares.",
+  "background_tile": { "x": 600, "y": 60, "w": 80, "h": 80 },
+
+  "parts": [
+    {
+      "id": "solenoid",
+      "part": "parts/solenoid.svg",
+      "_comment": "replaces the DC motor at top left",
+      "x": 255,
+      "y": 105,
+      "scale": 0.62,
+      "cover": [{ "x": 248, "y": 100, "w": 240, "h": 160 }]
+    },
+    {
+      "id": "ads1115",
+      "part": "parts/ads1115.svg",
+      "_comment": "replaces the breakout board bottom right",
+      "x": 1350,
+      "y": 950,
+      "scale": 0.55,
+      "cover": [{ "x": 1340, "y": 940, "w": 200, "h": 290 }]
+    }
+  ]
+}
