@@ -1,29 +1,130 @@
 {
-  "_note": "Coordinates are in pixels of base.png, top-left origin. The values below are eyeballed from the posted screenshot and WILL need adjusting once the real base.png is in place - run assemble.py, look at the PNG, nudge, repeat.",
   "title": "Arduino UNO + solenoid + ADS1115",
   "base": "base.png",
-
-  "_background_tile": "A rectangle of base.png containing nothing but clean graph-paper grid. It gets tiled into the cover rectangles so the grid keeps running. Pick a whole number of grid squares.",
-  "background_tile": { "x": 600, "y": 60, "w": 80, "h": 80 },
-
+  "_tile": "a 303x303 patch of clean graph paper left of the breadboard; 303px is 14 grid periods (21.64px) to within 0.04px, so tiling does not drift",
+  "background_tile": {
+    "x": 20,
+    "y": 890,
+    "w": 303,
+    "h": 303
+  },
   "parts": [
     {
       "id": "solenoid",
       "part": "parts/solenoid.svg",
-      "_comment": "replaces the DC motor at top left",
-      "x": 255,
-      "y": 105,
-      "scale": 0.62,
-      "cover": [{ "x": 248, "y": 100, "w": 240, "h": 160 }]
+      "_comment": "replaces the DC motor; mirrored so the terminals face the existing wires",
+      "x": 268,
+      "y": 34.35,
+      "scale": 0.7,
+      "mirror": true,
+      "hide": ["solenoid-wire-plus", "solenoid-wire-minus"],
+      "cover": [
+        {
+          "x": 143,
+          "y": 24,
+          "w": 310,
+          "h": 202
+        }
+      ]
     },
     {
       "id": "ads1115",
       "part": "parts/ads1115.svg",
-      "_comment": "replaces the breakout board bottom right",
-      "x": 1350,
-      "y": 950,
-      "scale": 0.55,
-      "cover": [{ "x": 1340, "y": 940, "w": 200, "h": 290 }]
+      "_comment": "same footprint as the board it replaces, so all six wires still land on their pads",
+      "x": 1344.5,
+      "y": 880,
+      "scale": 0.5,
+      "cover": [
+        {
+          "x": 1344,
+          "y": 885,
+          "w": 156,
+          "h": 233
+        },
+        {
+          "x": 1360,
+          "y": 864,
+          "w": 140,
+          "h": 21
+        }
+      ]
+    }
+  ],
+  "_wires": "stubs bridging the covered strip between each new pad and the untouched original wiring",
+  "wires": [
+    {
+      "name": "motor-red",
+      "color": "#ff0000",
+      "width": 9,
+      "points": [
+        [412, 93.5],
+        [456, 93.5]
+      ]
+    },
+    {
+      "name": "motor-black",
+      "color": "#000000",
+      "width": 9,
+      "points": [
+        [412, 162.1],
+        [438, 162.1],
+        [438, 115.5],
+        [456, 115.5]
+      ]
+    },
+    {
+      "name": "ads-purple",
+      "color": "#ab58a2",
+      "width": 9,
+      "points": [
+        [1338, 960],
+        [1370, 960]
+      ]
+    },
+    {
+      "name": "ads-brown",
+      "color": "#8c3b00",
+      "width": 9,
+      "points": [
+        [1338, 982],
+        [1370, 982]
+      ]
+    },
+    {
+      "name": "ads-scl",
+      "color": "#418dd9",
+      "width": 9,
+      "points": [
+        [1512, 982],
+        [1478, 982]
+      ]
+    },
+    {
+      "name": "ads-sda",
+      "color": "#25cc35",
+      "width": 9,
+      "points": [
+        [1512, 1004],
+        [1478, 1004]
+      ]
+    },
+    {
+      "name": "ads-gnd",
+      "color": "#404040",
+      "width": 10,
+      "points": [
+        [1512, 1025.5],
+        [1478, 1025.5]
+      ]
+    },
+    {
+      "name": "ads-vdd",
+      "color": "#cc1414",
+      "width": 9,
+      "points": [
+        [1512, 1047],
+        [1478, 1047]
+      ]
     }
   ]
 }

@@ -37,6 +37,11 @@ TEMPLATE = """<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3
 
   <!-- layer 3: replacement parts -->
 {parts}
+
+  <!-- layer 4: wire stubs joining the new parts to the original wiring -->
+  <g id="wires" fill="none" stroke-linecap="round" stroke-linejoin="round">
+{wires}
+  </g>
 </svg>
 """
 
@@ -45,7 +50,7 @@ def data_uri(png_bytes):
     return "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
 
 
-def inline_part(path, prefix, transform, label):
+def inline_part(path, prefix, transform, label, hide=()):
     """Return the part's markup as a <g>, with every id namespaced by prefix."""
     text = path.read_text()
 
@@ -63,6 +68,12 @@ def inline_part(path, prefix, transform, label):
         body = body.replace(f'id="{ident}"', f'id="{new}"')
         body = body.replace(f"url(#{ident})", f"url(#{new})")
         body = body.replace(f'href="#{ident}"', f'href="#{new}"')
+
+    for ident in hide:
+        target = f'id="{prefix}-{ident}"'
+        if target not in body:
+            raise SystemExit(f"{path}: cannot hide unknown id {ident!r}")
+        body = body.replace(target, target + ' style="display:none"')
 
     body = "\n".join("    " + line for line in body.strip().splitlines())
     return vb, (
@@ -126,15 +137,26 @@ def build(cfg_path, out_path, link_base):
             )
 
         scale = spec.get("scale", 1.0)
+        hide = tuple(spec.get("hide", ()))
         transform = f"translate({spec['x']},{spec['y']}) scale({scale})"
-        vb, markup = inline_part(root / spec["part"], prefix, transform, spec["part"])
+        # read the viewBox first: mirroring and rotation both need the part's size
+        vb, _ = inline_part(root / spec["part"], prefix, transform, spec["part"], hide)
+        if spec.get("mirror"):
+            transform += f" translate({vb[2]},0) scale(-1,1)"
         if spec.get("rotate"):
-            cx, cy = vb[2] / 2, vb[3] / 2
-            transform += f" rotate({spec['rotate']},{cx},{cy})"
-            _, markup = inline_part(
-                root / spec["part"], prefix, transform, spec["part"]
-            )
+            transform += f" rotate({spec['rotate']},{vb[2] / 2},{vb[3] / 2})"
+        _, markup = inline_part(
+            root / spec["part"], prefix, transform, spec["part"], hide
+        )
         parts.append(markup)
+
+    wires = []
+    for i, wire in enumerate(cfg.get("wires", [])):
+        pts = " ".join(f"{x},{y}" for x, y in wire["points"])
+        wires.append(
+            f'    <polyline id="wire-{wire.get("name", i)}" points="{pts}" '
+            f'stroke="{wire["color"]}" stroke-width="{wire.get("width", 9)}"/>'
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
@@ -146,9 +168,13 @@ def build(cfg_path, out_path, link_base):
             base_href=base_href,
             covers="\n".join(covers) if covers else "",
             parts="\n".join(parts),
+            wires="\n".join(wires),
         )
     )
-    print(f"{out_path}  {w}x{h}  ({len(cfg['parts'])} parts, {len(covers)} covers)")
+    print(
+        f"{out_path}  {w}x{h}  ({len(cfg['parts'])} parts, "
+        f"{len(covers)} covers, {len(wires)} wires)"
+    )
 
 
 def main():

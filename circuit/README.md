@@ -49,15 +49,27 @@ When a part is inlined by `assemble.py` its ids get namespaced, so
 ## Checking it
 
 ```bash
-python3 circuit/selftest.py
+python3 circuit/selftest.py         # the pipeline, on a synthetic screenshot
+python3 circuit/verify_assembly.py  # the actual output, against base.png
 ```
 
-Runs the whole assemble → render path against a synthetic screenshot (grid plus
-two coloured blobs standing in for the outgoing parts) and asserts the covers
-landed, the grid tiles through them, the new parts drew, and untouched areas of
-the screenshot came through unchanged. It needs no `base.png`.
+`selftest.py` runs the whole assemble → render path against a synthetic
+screenshot (grid plus two coloured blobs standing in for the outgoing parts) and
+asserts the covers landed, the grid tiles through them, the new parts drew, and
+untouched areas came through unchanged. It needs no `base.png`.
 
-Two traps it exists to catch:
+`verify_assembly.py` checks the real output: nothing outside the edited areas
+moved, both old parts are gone, and every wire runs unbroken from the original
+screenshot onto a new pad.
+
+Both avoid one tempting but wrong assertion: "no pixel still looks like the old
+part". The replacements legitimately reuse those colours — the solenoid's copper
+highlight falls inside the DC motor's gold — so the test is whether the region
+still shows the ORIGINAL screenshot, not whether a colour is absent. For the
+same reason the comparison skips pixels that were graph paper to begin with;
+a bounding box holds rounded corners that never were part art.
+
+Traps these exist to catch:
 
 - **`--` inside an XML comment is illegal.** Chromium parses inlined SVG with
   the lenient HTML parser and renders something plausible anyway; cairosvg and
@@ -65,3 +77,6 @@ Two traps it exists to catch:
 - **Chromium's full binary crops the bottom of the page.** In new headless mode
   `--window-size` counts the window frame, so the viewport comes out short.
   `render.py` prefers `headless_shell`, which does not.
+- **The graph-paper grid period is 21.64px, not an integer.** The background
+  tile is 303px because that is 14 periods to within 0.04px; a tile picked for
+  roundness instead drifts visibly across a wide cover.

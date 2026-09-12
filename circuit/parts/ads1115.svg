@@ -1,79 +1,95 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 330 480" width="330" height="480">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 456" width="320" height="456">
   <title>ADS1115 breakout, breadboard view</title>
-  <desc>Flat breadboard-view part: portrait board, single 10-pad column on the left
-        (VDD GND SCL SDA ADDR ALRT A0 A1 A2 A3). Attach wires at the pad centres,
-        addressable as ads-pad-VDD ... ads-pad-A3.</desc>
+  <desc>Flat breadboard-view part drawn to the footprint of the board it replaces:
+        two pad columns of six at 43.4 unit pitch. Right column is ALRT ADDR SCL SDA
+        GND VDD top to bottom; left column carries the analog inputs. Pads are
+        addressable as ads-padL-1..6 and ads-padR-1..6.</desc>
 
   <defs>
-    <g id="ads-chip-res">
-      <rect x="0" y="0" width="44" height="26" fill="#cfd3d4"/>
-      <rect x="7" y="0" width="30" height="26" fill="#332722"/>
+    <g id="ads-pad">
+      <circle r="13" fill="#e0e3e3"/>
+      <circle r="7.5" fill="#22505f"/>
+      <circle r="2.6" fill="#e0e3e3"/>
+    </g>
+    <g id="ads-res">
+      <rect x="0" y="0" width="34" height="20" fill="#cfd3d4"/>
+      <rect x="6" y="0" width="22" height="20" fill="#332722"/>
     </g>
   </defs>
 
   <g id="ads1115" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-weight="700">
-    <!-- PCB -->
-    <rect x="12" y="8" width="306" height="464" rx="5" fill="#1c6d89"/>
+    <rect x="9" y="10" width="302" height="436" rx="8" fill="#1c6d89"/>
 
-    <!-- silkscreen part number, reading top to bottom down the right edge -->
-    <text transform="rotate(90 292 150)" x="292" y="150" font-size="42"
+    <!-- silkscreen part number, reading top to bottom -->
+    <text transform="rotate(90 150 112)" x="150" y="112" font-size="28"
           fill="#ffffff" letter-spacing="1">ADS1115</text>
-
-    <!-- passives -->
-    <g>
-      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="52"/>
-      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="95"/>
-      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="138"/>
-      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="181"/>
-      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="224"/>
-      <rect x="156" y="80" width="26" height="34" fill="#cfd3d4"/>
-      <rect x="156" y="86" width="26" height="22" fill="#c8692a"/>
-      <rect x="240" y="356" width="26" height="34" fill="#cfd3d4"/>
-      <rect x="240" y="362" width="26" height="22" fill="#c8692a"/>
-    </g>
+    <text x="160" y="404" font-size="15" fill="#ffffff" text-anchor="middle"
+          opacity="0.85">16-bit ADC</text>
 
     <!-- ADS1115 die, MSOP-10 -->
     <g id="ads-chip">
       <g fill="#b9bdbe">
-        <rect x="150" y="352" width="12" height="8"/><rect x="150" y="368" width="12" height="8"/>
-        <rect x="150" y="384" width="12" height="8"/><rect x="150" y="400" width="12" height="8"/>
-        <rect x="230" y="352" width="12" height="8"/><rect x="230" y="368" width="12" height="8"/>
-        <rect x="230" y="384" width="12" height="8"/><rect x="230" y="400" width="12" height="8"/>
+        <rect x="66" y="220" width="10" height="7"/><rect x="66" y="234" width="10" height="7"/>
+        <rect x="66" y="248" width="10" height="7"/>
+        <rect x="134" y="220" width="10" height="7"/><rect x="134" y="234" width="10" height="7"/>
+        <rect x="134" y="248" width="10" height="7"/>
       </g>
-      <rect x="160" y="342" width="72" height="76" rx="2" fill="#2b2b2f"/>
-      <circle cx="169" cy="351" r="4" fill="#4d4d55"/>
+      <rect x="76" y="210" width="58" height="60" rx="2" fill="#2b2b2f"/>
+      <circle cx="84" cy="218" r="3.5" fill="#4d4d55"/>
     </g>
 
-    <!-- 10-pad header column; pad centres are the wire attachment points -->
-    <g id="ads-pads">
-      <g id="ads-pad-VDD"><circle cx="57" cy="66" r="19" fill="#d9dcdc"/><circle cx="57" cy="66" r="11" fill="#2d4550"/><circle cx="57" cy="66" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-GND"><circle cx="57" cy="107" r="19" fill="#d9dcdc"/><circle cx="57" cy="107" r="11" fill="#2d4550"/><circle cx="57" cy="107" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-SCL"><circle cx="57" cy="148" r="19" fill="#d9dcdc"/><circle cx="57" cy="148" r="11" fill="#2d4550"/><circle cx="57" cy="148" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-SDA"><circle cx="57" cy="190" r="19" fill="#d9dcdc"/><circle cx="57" cy="190" r="11" fill="#2d4550"/><circle cx="57" cy="190" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-ADDR"><circle cx="57" cy="231" r="19" fill="#d9dcdc"/><circle cx="57" cy="231" r="11" fill="#2d4550"/><circle cx="57" cy="231" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-ALRT"><circle cx="57" cy="272" r="19" fill="#d9dcdc"/><circle cx="57" cy="272" r="11" fill="#2d4550"/><circle cx="57" cy="272" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-A0"><circle cx="57" cy="313" r="19" fill="#d9dcdc"/><circle cx="57" cy="313" r="11" fill="#2d4550"/><circle cx="57" cy="313" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-A1"><circle cx="57" cy="354" r="19" fill="#d9dcdc"/><circle cx="57" cy="354" r="11" fill="#2d4550"/><circle cx="57" cy="354" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-A2"><circle cx="57" cy="396" r="19" fill="#d9dcdc"/><circle cx="57" cy="396" r="11" fill="#2d4550"/><circle cx="57" cy="396" r="3.5" fill="#d9dcdc"/></g>
-      <g id="ads-pad-A3"><circle cx="57" cy="437" r="19" fill="#d9dcdc"/><circle cx="57" cy="437" r="11" fill="#2d4550"/><circle cx="57" cy="437" r="3.5" fill="#d9dcdc"/></g>
+    <!-- passives -->
+    <g>
+      <use xlink:href="#ads-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="78" y="128"/>
+      <use xlink:href="#ads-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="78" y="160"/>
+      <use xlink:href="#ads-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="78" y="300"/>
+      <use xlink:href="#ads-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="78" y="332"/>
+      <rect x="128" y="300" width="20" height="28" fill="#cfd3d4"/>
+      <rect x="128" y="305" width="20" height="18" fill="#c8692a"/>
+    </g>
+
+    <!-- left pad column: analog inputs -->
+    <g id="ads-padsL">
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padL-1" x="51" y="117"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padL-2" x="51" y="160"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padL-3" x="51" y="204"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padL-4" x="51" y="247"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padL-5" x="51" y="291"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padL-6" x="51" y="334"/>
+    </g>
+
+    <!-- right pad column -->
+    <g id="ads-padsR">
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padR-1" x="267" y="117"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padR-2" x="267" y="160"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padR-3" x="267" y="204"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padR-4" x="267" y="247"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padR-5" x="267" y="291"/>
+      <use xlink:href="#ads-pad" xmlns:xlink="http://www.w3.org/1999/xlink" id="ads-padR-6" x="267" y="334"/>
+    </g>
+
+    <!-- right column labels, printed inboard of the pads -->
+    <g id="ads-labelsR" font-size="24" fill="#ffffff" text-anchor="end">
+      <text x="246" y="126">ALRT</text>
+      <text x="246" y="169">ADDR</text>
+      <text x="246" y="213">SCL</text>
+      <text x="246" y="256">SDA</text>
+      <text x="246" y="300">GND</text>
+      <text x="246" y="343">VDD</text>
+    </g>
+
+    <!-- left column labels; fill these in once the originals are confirmed -->
+    <g id="ads-labelsL" font-size="24" fill="#ffffff" text-anchor="start">
+      <text x="72" y="126"></text>
+      <text x="72" y="169"></text>
+      <text x="72" y="213"></text>
+      <text x="72" y="256"></text>
+      <text x="72" y="300"></text>
+      <text x="72" y="343"></text>
     </g>
 
     <!-- pin 1 marker -->
-    <path d="M57 40 l18 7.6 7.6 18 -7.6 18 -18 7.6 -18-7.6 -7.6-18 7.6-18z"
-          fill="none" stroke="#ffffff" stroke-width="2.5" stroke-dasharray="7 5"/>
-
-    <!-- pad labels -->
-    <g font-size="32" fill="#ffffff">
-      <text x="88" y="78">VDD</text>
-      <text x="88" y="119">GND</text>
-      <text x="88" y="160">SCL</text>
-      <text x="88" y="202">SDA</text>
-      <text x="88" y="243">ADDR</text>
-      <text x="88" y="284">ALRT</text>
-      <text x="88" y="325">A0</text>
-      <text x="88" y="366">A1</text>
-      <text x="88" y="408">A2</text>
-      <text x="88" y="449">A3</text>
-    </g>
+    <path d="M51 96 l14.8 6.2 6.2 14.8 -6.2 14.8 -14.8 6.2 -14.8-6.2 -6.2-14.8 6.2-14.8z"
+          fill="none" stroke="#ffffff" stroke-width="2.2" stroke-dasharray="6 4"/>
   </g>
 </svg>
