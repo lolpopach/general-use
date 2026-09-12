@@ -40,11 +40,11 @@ own. Useful handles:
 - solenoid: `#solenoid-wire-plus` / `#solenoid-wire-minus` are the orange and
   purple terminal stubs — extend or reroute them to reach the rest of the
   circuit.
-- ADS1115: every header pin is addressable as `#ads-pin-V`, `#ads-pin-SCL`,
-  `#ads-pin-A0` and so on. Attach wires to the bottom tip of the tail.
+- ADS1115: every pad is addressable as `#ads-pad-VDD`, `#ads-pad-SCL`,
+  `#ads-pad-A0` and so on. Attach wires at the pad centre.
 
 When a part is inlined by `assemble.py` its ids get namespaced, so
-`#ads-pin-SCL` becomes `#ads1115-ads-pin-SCL` in the assembled file.
+`#ads-pad-SCL` becomes `#ads1115-ads-pad-SCL` in the assembled file.
 
 ## Checking it
 

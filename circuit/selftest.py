@@ -191,7 +191,7 @@ def main():
             lambda c: c[0] > 150 and c[1] > 90 and c[2] < 110 and c[0] > c[2] + 60,
         )
         check("solenoid copper present", copper > 2000, f"{copper} px")
-        pcb = count((560, 300, 810, 470), lambda c: max(c) < 60)
+        pcb = count((570, 310, 730, 550), lambda c: near(c, (28, 109, 137), 28))
         check("ads1115 pcb present", pcb > 2000, f"{pcb} px")
 
         # untouched area of the screenshot must come through unchanged
