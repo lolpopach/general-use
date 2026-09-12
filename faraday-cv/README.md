@@ -352,3 +352,17 @@ tools/serial_logger.py    시리얼 → CSV 저장
 wsgi.py, Dockerfile, fly.toml   배포용
 ../render.yaml   Render Blueprint (저장소 루트에 위치 -- Render가 그곳에서 찾음)
 ```
+
+---
+
+## 저자 및 라이선스
+
+논문 _Beyond "Faster Magnet, More Voltage": A Quantitative Faraday's Law
+Experiment Using Computer Vision_ 에 딸린 소프트웨어입니다.
+
+**Ui Chan Kim · Ye Geon Kim · Chan Hee Yang · Yongseok Jeong**
+
+© 2026, [MIT 라이선스](LICENSE)로 공개합니다. 누구나 쓰고 고치고 재배포할 수
+있고, 위 저작권 표시와 라이선스 전문만 함께 남겨주시면 됩니다.
+
+이 도구로 얻은 결과를 발표하실 때는 위 논문을 인용해 주세요.

@@ -441,3 +441,22 @@ td:last-child {
   flex: 1;
   min-width: 0;
 }
+
+/* Kept out of the way of the tool itself: the credit belongs on the page, but
+   under it, not competing with the controls. */
+.site-footer {
+  border-top: 1px solid var(--line);
+  background: #fff;
+  padding: 14px 24px 20px;
+}
+
+.site-footer .credit {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 80ch;
+}
+
+.site-footer a {
+  color: var(--accent);
+}

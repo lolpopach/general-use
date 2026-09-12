@@ -197,6 +197,14 @@ def test_browser_tracking_reproduces_the_papers_result(
             assert "Done" in status, f"run did not finish cleanly: {status}"
 
             rows = page.inner_text("#stats-table")
+            # "Done" only means the server answered; the <img> tags it created
+            # are still fetching.  Reading naturalWidth before they land makes
+            # this test fail for a reason that has nothing to do with tracking.
+            page.wait_for_function(
+                "Array.from(document.querySelectorAll('#figures img'))"
+                ".every((i) => i.complete)",
+                timeout=30000,
+            )
             figures = page.evaluate(
                 "Array.from(document.querySelectorAll('#figures img')).map(i => i.naturalWidth)"
             )
