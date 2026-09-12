@@ -4,3 +4,8 @@
 node_modules/
 __pycache__/
 *.pyc
+
+# throwaway inspection crops from measuring base.png
+circuit/out/crop_*.png
+circuit/out/lbl_*.png
+circuit/out/check_*.png
