@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 264" width="220" height="264">
+  <title>Solenoid coil</title>
+  <desc>Bobbin-wound solenoid coil, vertical axis. Orange (+) and purple (-) terminals on the left.</desc>
+
+  <defs>
+    <!-- copper body: bright highlight left-of-centre, dark falloff at both edges -->
+    <linearGradient id="sol-copper" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0.00" stop-color="#4a2410"/>
+      <stop offset="0.10" stop-color="#8a4a1c"/>
+      <stop offset="0.32" stop-color="#d98b3e"/>
+      <stop offset="0.42" stop-color="#f5c37a"/>
+      <stop offset="0.55" stop-color="#d4823a"/>
+      <stop offset="0.80" stop-color="#96501f"/>
+      <stop offset="1.00" stop-color="#3d1d0c"/>
+    </linearGradient>
+
+    <!-- dark plastic flange, same left-to-right cylinder shading -->
+    <linearGradient id="sol-flange" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0.00" stop-color="#0a0a0c"/>
+      <stop offset="0.12" stop-color="#2b2b30"/>
+      <stop offset="0.36" stop-color="#54545c"/>
+      <stop offset="0.46" stop-color="#6e6e78"/>
+      <stop offset="0.62" stop-color="#3a3a41"/>
+      <stop offset="1.00" stop-color="#08080a"/>
+    </linearGradient>
+
+    <linearGradient id="sol-flange-top" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0.00" stop-color="#1b1b1f"/>
+      <stop offset="0.40" stop-color="#4e4e57"/>
+      <stop offset="0.70" stop-color="#2a2a2f"/>
+      <stop offset="1.00" stop-color="#141417"/>
+    </linearGradient>
+
+    <!-- chrome terminal barrel -->
+    <linearGradient id="sol-chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.00" stop-color="#6d7278"/>
+      <stop offset="0.30" stop-color="#e8ecef"/>
+      <stop offset="0.55" stop-color="#b3b9bf"/>
+      <stop offset="1.00" stop-color="#5a5f65"/>
+    </linearGradient>
+
+    <!-- one winding turn, tiled down the body -->
+    <pattern id="sol-turns" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="4" height="4" fill="none"/>
+      <line x1="0" y1="0.6" x2="4" y2="0.6" stroke="#2e1608" stroke-width="0.9" opacity="0.55"/>
+      <line x1="0" y1="2.2" x2="4" y2="2.2" stroke="#ffd9a1" stroke-width="0.7" opacity="0.30"/>
+    </pattern>
+  </defs>
+
+  <g id="solenoid">
+    <!-- coil body -->
+    <rect x="46" y="44" width="128" height="176" fill="url(#sol-copper)"/>
+    <rect x="46" y="44" width="128" height="176" fill="url(#sol-turns)"/>
+
+    <!-- bottom flange -->
+    <rect x="36" y="214" width="148" height="30" rx="4" fill="url(#sol-flange)"/>
+    <ellipse cx="110" cy="244" rx="74" ry="11" fill="url(#sol-flange)"/>
+    <ellipse cx="110" cy="214" rx="74" ry="11" fill="#111114"/>
+
+    <!-- top flange -->
+    <rect x="36" y="30" width="148" height="26" rx="4" fill="url(#sol-flange)"/>
+    <ellipse cx="110" cy="56" rx="74" ry="11" fill="url(#sol-flange)"/>
+    <ellipse cx="110" cy="30" rx="74" ry="11" fill="url(#sol-flange-top)"/>
+    <ellipse cx="110" cy="30" rx="46" ry="6.5" fill="#0b0b0e"/>
+    <ellipse cx="110" cy="31.5" rx="46" ry="6.5" fill="none" stroke="#6a6a74" stroke-width="1" opacity="0.5"/>
+
+    <!-- (+) terminal, upper left -->
+    <g id="solenoid-terminal-plus">
+      <rect x="14" y="78" width="34" height="13" rx="3" fill="url(#sol-chrome)" stroke="#4a4f55" stroke-width="0.8"/>
+      <rect x="22" y="78" width="3" height="13" fill="#7f858b" opacity="0.7"/>
+      <rect x="33" y="78" width="3" height="13" fill="#7f858b" opacity="0.7"/>
+      <!-- wire stub: extend or reroute this line to reach the rest of the circuit -->
+      <line id="solenoid-wire-plus" x1="16" y1="84.5" x2="0" y2="84.5"
+            stroke="#f07d18" stroke-width="7" stroke-linecap="round"/>
+    </g>
+
+    <!-- (-) terminal, lower left -->
+    <g id="solenoid-terminal-minus">
+      <rect x="14" y="176" width="34" height="13" rx="3" fill="url(#sol-chrome)" stroke="#4a4f55" stroke-width="0.8"/>
+      <rect x="22" y="176" width="3" height="13" fill="#7f858b" opacity="0.7"/>
+      <rect x="33" y="176" width="3" height="13" fill="#7f858b" opacity="0.7"/>
+      <line id="solenoid-wire-minus" x1="16" y1="182.5" x2="0" y2="182.5"
+            stroke="#8e5cc4" stroke-width="7" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

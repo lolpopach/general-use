@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 330 480" width="330" height="480">
+  <title>ADS1115 breakout, breadboard view</title>
+  <desc>Flat breadboard-view part: portrait board, single 10-pad column on the left
+        (VDD GND SCL SDA ADDR ALRT A0 A1 A2 A3). Attach wires at the pad centres,
+        addressable as ads-pad-VDD ... ads-pad-A3.</desc>
+
+  <defs>
+    <g id="ads-chip-res">
+      <rect x="0" y="0" width="44" height="26" fill="#cfd3d4"/>
+      <rect x="7" y="0" width="30" height="26" fill="#332722"/>
+    </g>
+  </defs>
+
+  <g id="ads1115" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-weight="700">
+    <!-- PCB -->
+    <rect x="12" y="8" width="306" height="464" rx="5" fill="#1c6d89"/>
+
+    <!-- silkscreen part number, reading top to bottom down the right edge -->
+    <text transform="rotate(90 292 150)" x="292" y="150" font-size="42"
+          fill="#ffffff" letter-spacing="1">ADS1115</text>
+
+    <!-- passives -->
+    <g>
+      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="52"/>
+      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="95"/>
+      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="138"/>
+      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="181"/>
+      <use xlink:href="#ads-chip-res" xmlns:xlink="http://www.w3.org/1999/xlink" x="196" y="224"/>
+      <rect x="156" y="80" width="26" height="34" fill="#cfd3d4"/>
+      <rect x="156" y="86" width="26" height="22" fill="#c8692a"/>
+      <rect x="240" y="356" width="26" height="34" fill="#cfd3d4"/>
+      <rect x="240" y="362" width="26" height="22" fill="#c8692a"/>
+    </g>
+
+    <!-- ADS1115 die, MSOP-10 -->
+    <g id="ads-chip">
+      <g fill="#b9bdbe">
+        <rect x="150" y="352" width="12" height="8"/><rect x="150" y="368" width="12" height="8"/>
+        <rect x="150" y="384" width="12" height="8"/><rect x="150" y="400" width="12" height="8"/>
+        <rect x="230" y="352" width="12" height="8"/><rect x="230" y="368" width="12" height="8"/>
+        <rect x="230" y="384" width="12" height="8"/><rect x="230" y="400" width="12" height="8"/>
+      </g>
+      <rect x="160" y="342" width="72" height="76" rx="2" fill="#2b2b2f"/>
+      <circle cx="169" cy="351" r="4" fill="#4d4d55"/>
+    </g>
+
+    <!-- 10-pad header column; pad centres are the wire attachment points -->
+    <g id="ads-pads">
+      <g id="ads-pad-VDD"><circle cx="57" cy="66" r="19" fill="#d9dcdc"/><circle cx="57" cy="66" r="11" fill="#2d4550"/><circle cx="57" cy="66" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-GND"><circle cx="57" cy="107" r="19" fill="#d9dcdc"/><circle cx="57" cy="107" r="11" fill="#2d4550"/><circle cx="57" cy="107" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-SCL"><circle cx="57" cy="148" r="19" fill="#d9dcdc"/><circle cx="57" cy="148" r="11" fill="#2d4550"/><circle cx="57" cy="148" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-SDA"><circle cx="57" cy="190" r="19" fill="#d9dcdc"/><circle cx="57" cy="190" r="11" fill="#2d4550"/><circle cx="57" cy="190" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-ADDR"><circle cx="57" cy="231" r="19" fill="#d9dcdc"/><circle cx="57" cy="231" r="11" fill="#2d4550"/><circle cx="57" cy="231" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-ALRT"><circle cx="57" cy="272" r="19" fill="#d9dcdc"/><circle cx="57" cy="272" r="11" fill="#2d4550"/><circle cx="57" cy="272" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-A0"><circle cx="57" cy="313" r="19" fill="#d9dcdc"/><circle cx="57" cy="313" r="11" fill="#2d4550"/><circle cx="57" cy="313" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-A1"><circle cx="57" cy="354" r="19" fill="#d9dcdc"/><circle cx="57" cy="354" r="11" fill="#2d4550"/><circle cx="57" cy="354" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-A2"><circle cx="57" cy="396" r="19" fill="#d9dcdc"/><circle cx="57" cy="396" r="11" fill="#2d4550"/><circle cx="57" cy="396" r="3.5" fill="#d9dcdc"/></g>
+      <g id="ads-pad-A3"><circle cx="57" cy="437" r="19" fill="#d9dcdc"/><circle cx="57" cy="437" r="11" fill="#2d4550"/><circle cx="57" cy="437" r="3.5" fill="#d9dcdc"/></g>
+    </g>
+
+    <!-- pin 1 marker -->
+    <path d="M57 40 l18 7.6 7.6 18 -7.6 18 -18 7.6 -18-7.6 -7.6-18 7.6-18z"
+          fill="none" stroke="#ffffff" stroke-width="2.5" stroke-dasharray="7 5"/>
+
+    <!-- pad labels -->
+    <g font-size="32" fill="#ffffff">
+      <text x="88" y="78">VDD</text>
+      <text x="88" y="119">GND</text>
+      <text x="88" y="160">SCL</text>
+      <text x="88" y="202">SDA</text>
+      <text x="88" y="243">ADDR</text>
+      <text x="88" y="284">ALRT</text>
+      <text x="88" y="325">A0</text>
+      <text x="88" y="366">A1</text>
+      <text x="88" y="408">A2</text>
+      <text x="88" y="449">A3</text>
+    </g>
+  </g>
+</svg>
